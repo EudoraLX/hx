@@ -37,10 +37,25 @@ class ExcelExporter {
                     cell.setCellFormula(formula)
                 } else {
                     // 设置普通值
-                    cell.setCellValue(cellValue)
+                    if (cellValue.isNotEmpty()) {
+                        try {
+                            // 尝试解析为数字
+                            val numericValue = cellValue.toDouble()
+                            cell.setCellValue(numericValue)
+                        } catch (e: NumberFormatException) {
+                            // 如果不是数字，设置为字符串
+                            cell.setCellValue(cellValue)
+                        }
+                    } else {
+                        // 空值
+                        cell.setCellValue("")
+                    }
                 }
             }
         }
+        
+        // 强制重新计算所有公式
+        workbook.creationHelper.createFormulaEvaluator().evaluateAll()
         
         // 自动调整列宽
         for (i in 0 until tableData.columnCount) {
@@ -85,10 +100,25 @@ class ExcelExporter {
                     cell.setCellFormula(formula)
                 } else {
                     // 设置普通值
-                    cell.setCellValue(cellValue)
+                    if (cellValue.isNotEmpty()) {
+                        try {
+                            // 尝试解析为数字
+                            val numericValue = cellValue.toDouble()
+                            cell.setCellValue(numericValue)
+                        } catch (e: NumberFormatException) {
+                            // 如果不是数字，设置为字符串
+                            cell.setCellValue(cellValue)
+                        }
+                    } else {
+                        // 空值
+                        cell.setCellValue("")
+                    }
                 }
             }
         }
+        
+        // 强制重新计算所有公式
+        workbook.creationHelper.createFormulaEvaluator().evaluateAll()
         
         // 自动调整列宽
         for (i in 0 until tableData.columnCount) {

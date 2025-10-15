@@ -97,10 +97,30 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
     var mergedTable: MergedTableData? = null
     var smartMergeResult: MergeResult? = null
     
+    // 记住上次选择的路径
+    var lastSelectedDirectory: File? = null
+    
     // 获取预览组件
     val previewInfoLabel = previewPanel.getComponent(0) as JLabel
     val previewScrollPane = previewPanel.getComponent(1) as JScrollPane
     val previewTable = previewScrollPane.viewport.view as JTable
+    
+    // 计算最优列宽的函数
+    fun calculateOptimalColumnWidth(table: JTable, columnIndex: Int): Int {
+        val column = table.columnModel.getColumn(columnIndex)
+        val headerWidth = table.getTableHeader().getFontMetrics(table.getTableHeader().font)
+            .stringWidth(column.headerValue.toString()) + 20
+        
+        var maxWidth = headerWidth
+        for (row in 0 until table.rowCount) {
+            val cellValue = table.getValueAt(row, columnIndex)?.toString() ?: ""
+            val cellWidth = table.getFontMetrics(table.font).stringWidth(cellValue) + 20
+            maxWidth = maxOf(maxWidth, cellWidth)
+        }
+        
+        // 限制最大宽度，避免列过宽
+        return minOf(maxWidth, 300)
+    }
     
     // 更新文件列表显示
     fun updateFileList() {
@@ -112,7 +132,6 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
     
     // 更新预览显示
     fun updatePreview() {
-        println("updatePreview called - importedTables.size: ${importedTables.size}, smartMergeResult: ${smartMergeResult != null}")
         if (smartMergeResult != null) {
             // 显示智能合并后的数据
             val updatedTable = smartMergeResult!!.updatedTable
@@ -125,11 +144,12 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
             }
             previewTable.model = model
             
-            // 调整列宽
+            // 自适应列宽 - 根据内容自动调整列宽
             val tableColumnModel = previewTable.columnModel
             for (i in 0 until tableColumnModel.columnCount) {
                 val column = tableColumnModel.getColumn(i)
-                column.preferredWidth = 120
+                column.preferredWidth = calculateOptimalColumnWidth(previewTable, i)
+                column.minWidth = 80         // 设置最小宽度
             }
             
             previewInfoLabel.text = "智能合并结果预览 (${updatedTable.rowCount} 行, ${updatedTable.columnCount} 列)"
@@ -144,18 +164,18 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
             }
             previewTable.model = model
             
-            // 调整列宽
+            // 自适应列宽 - 根据内容自动调整列宽
             val tableColumnModel = previewTable.columnModel
             for (i in 0 until tableColumnModel.columnCount) {
                 val column = tableColumnModel.getColumn(i)
-                column.preferredWidth = 120
+                column.preferredWidth = calculateOptimalColumnWidth(previewTable, i)
+                column.minWidth = 80         // 设置最小宽度
             }
             
             previewInfoLabel.text = "合并结果预览 (${mergedTable!!.rowCount} 行, ${mergedTable!!.columnCount} 列)"
         } else if (importedTables.isNotEmpty()) {
             // 显示第一个表格的数据
             val firstTable = importedTables[0]
-            println("Displaying first table: ${firstTable.fileName} with ${firstTable.rowCount} rows")
             val model = object : javax.swing.table.DefaultTableModel() {
                 override fun getColumnCount(): Int = firstTable.columnCount
                 override fun getRowCount(): Int = firstTable.rowCount
@@ -165,11 +185,12 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
             }
             previewTable.model = model
             
-            // 调整列宽
+            // 自适应列宽 - 根据内容自动调整列宽
             val tableColumnModel = previewTable.columnModel
             for (i in 0 until tableColumnModel.columnCount) {
                 val column = tableColumnModel.getColumn(i)
-                column.preferredWidth = 120
+                column.preferredWidth = calculateOptimalColumnWidth(previewTable, i)
+                column.minWidth = 80         // 设置最小宽度
             }
             
             previewInfoLabel.text = "预览: ${firstTable.fileName} (${firstTable.rowCount} 行, ${firstTable.columnCount} 列)"
@@ -184,32 +205,33 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
     importButton.addActionListener {
         val fileChooser = JFileChooser()
         fileChooser.fileFilter = FileNameExtensionFilter("Excel 文件 (*.xlsx, *.xls)", "xlsx", "xls")
-        // 注意：multiSelectionEnabled 在某些版本中可能不可用，我们使用默认的多选行为
+        
+        // 设置初始目录为上次选择的路径
+        if (lastSelectedDirectory != null && lastSelectedDirectory!!.exists()) {
+            fileChooser.currentDirectory = lastSelectedDirectory
+        }
         
         val result = fileChooser.showOpenDialog(panel)
-        println("File chooser result: $result")
         if (result == JFileChooser.APPROVE_OPTION) {
+            // 保存当前选择的目录
+            lastSelectedDirectory = fileChooser.currentDirectory
+            
             // 尝试获取选中的文件
             val selectedFiles = try {
                 fileChooser.selectedFiles
             } catch (e: Exception) {
-                println("selectedFiles not available, trying selectedFile: ${e.message}")
                 // 如果 selectedFiles 不可用，尝试使用 selectedFile
                 val singleFile = fileChooser.selectedFile
                 if (singleFile != null) arrayOf(singleFile) else emptyArray()
             }
             
-            println("Selected files count: ${selectedFiles.size}")
-            
             if (selectedFiles.isEmpty()) {
                 // 如果仍然没有文件，尝试使用 selectedFile
                 val singleFile = fileChooser.selectedFile
                 if (singleFile != null) {
-                    println("Using single file: ${singleFile.name}")
                     try {
                         val excelReader = ExcelReader()
                         val excelData = excelReader.readExcel(singleFile)
-                        println("Excel data - headers: ${excelData.headers.size}, rows: ${excelData.rows.size}")
                         val tableData = TableData(
                             fileName = singleFile.name,
                             headers = excelData.headers,
@@ -217,15 +239,11 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
                             formulas = excelData.formulas
                         )
                         importedTables.add(tableData)
-                        println("Added table: ${tableData.fileName}")
                     } catch (e: Exception) {
-                        println("Exception during single file import: ${e.message}")
-                        e.printStackTrace()
                         JOptionPane.showMessageDialog(panel, "读取 Excel 文件失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
                         return@addActionListener
                     }
                 } else {
-                    println("No files selected")
                     return@addActionListener
                 }
             } else {
@@ -233,9 +251,7 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
                 try {
                     val excelReader = ExcelReader()
                     selectedFiles.forEach { file ->
-                        println("Processing file: ${file.name}")
                         val excelData = excelReader.readExcel(file)
-                        println("Excel data - headers: ${excelData.headers.size}, rows: ${excelData.rows.size}")
                         val tableData = TableData(
                             fileName = file.name,
                             headers = excelData.headers,
@@ -243,22 +259,16 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
                             formulas = excelData.formulas
                         )
                         importedTables.add(tableData)
-                        println("Added table: ${tableData.fileName}")
                     }
                 } catch (e: Exception) {
-                    println("Exception during multi-file import: ${e.message}")
-                    e.printStackTrace()
                     JOptionPane.showMessageDialog(panel, "读取 Excel 文件失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
                     return@addActionListener
                 }
             }
             
             updateFileList()
-            println("After import - importedTables.size: ${importedTables.size}")
             updatePreview()
             statusLabel.text = "状态: 已导入 ${importedTables.size} 个表格"
-        } else {
-            println("File chooser cancelled or no files selected")
         }
     }
     
@@ -300,12 +310,7 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
             val baseTable = importedTables[0] // 使用第一个表格作为基础表格
             val updateTable = importedTables[1] // 使用第二个表格作为更新表格
             
-            println("Starting smart merge - baseTable: ${baseTable.fileName}, updateTable: ${updateTable.fileName}")
             smartMergeResult = smartMerger.smartMerge(baseTable, updateTable)
-            println("Smart merge completed - result: ${smartMergeResult != null}")
-            if (smartMergeResult != null) {
-                println("Merged table - rows: ${smartMergeResult!!.updatedTable.rowCount}, cols: ${smartMergeResult!!.updatedTable.columnCount}")
-            }
             
             updatePreview()
             
@@ -330,6 +335,11 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
         val fileChooser = JFileChooser()
         fileChooser.fileFilter = FileNameExtensionFilter("Excel 文件 (*.xlsx)", "xlsx")
         
+        // 设置初始目录为上次选择的路径
+        if (lastSelectedDirectory != null && lastSelectedDirectory!!.exists()) {
+            fileChooser.currentDirectory = lastSelectedDirectory
+        }
+        
         // 根据合并类型设置默认文件名
         val defaultFileName = if (smartMergeResult != null) {
             val smartMerger = SmartTableMerger()
@@ -341,15 +351,19 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
         
         val result = fileChooser.showSaveDialog(panel)
         if (result == JFileChooser.APPROVE_OPTION) {
+            // 保存当前选择的目录
+            lastSelectedDirectory = fileChooser.currentDirectory
+            
             try {
                 val exporter = ExcelExporter()
                 if (smartMergeResult != null) {
-                    // 导出智能合并结果
+                    // 导出智能合并结果 - 直接使用更新后的表格数据
+                    val updatedTable = smartMergeResult!!.updatedTable
                     val mergedTableData = MergedTableData(
-                        sourceTables = listOf(smartMergeResult!!.originalTable, smartMergeResult!!.updatedTable),
-                        headers = smartMergeResult!!.updatedTable.headers,
-                        rows = smartMergeResult!!.updatedTable.rows,
-                        formulas = smartMergeResult!!.updatedTable.formulas
+                        sourceTables = listOf(smartMergeResult!!.originalTable, updatedTable),
+                        headers = updatedTable.headers,
+                        rows = updatedTable.rows,
+                        formulas = updatedTable.formulas
                     )
                     exporter.exportToExcel(mergedTableData, fileChooser.selectedFile)
                 } else {
@@ -374,6 +388,9 @@ private fun createPreviewPanel(): JPanel {
     // 表格显示区域
     val table = JTable()
     val scrollPane = JScrollPane(table)
+    
+    // 设置表格的自动调整模式，允许水平滚动和自适应列宽
+    table.autoResizeMode = JTable.AUTO_RESIZE_OFF
     
     // 预览信息标签
     val previewInfoLabel = JLabel("请先导入并合并表格")

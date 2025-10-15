@@ -5,6 +5,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.apache.poi.hssf.usermodel.HSSFWorkbook
 import java.io.File
 import java.io.FileInputStream
+import java.text.SimpleDateFormat
+import java.util.Date
 
 data class ExcelData(
     val headers: List<String>,
@@ -66,18 +68,47 @@ class ExcelReader {
                 CellType.STRING -> cell.stringCellValue
                 CellType.NUMERIC -> {
                     if (DateUtil.isCellDateFormatted(cell)) {
-                        cell.dateCellValue.toString()
+                        // 格式化日期为 YYYY-MM-DD 格式
+                        val dateFormat = SimpleDateFormat("yyyy-MM-dd")
+                        dateFormat.format(cell.dateCellValue)
                     } else {
-                        cell.numericCellValue.toString()
+                        // 格式化数字，避免过多小数位
+                        val value = cell.numericCellValue
+                        if (value == value.toLong().toDouble()) {
+                            // 如果是整数，显示为整数
+                            value.toLong().toString()
+                        } else {
+                            // 如果是小数，最多显示2位小数
+                            String.format("%.2f", value).trimEnd('0').trimEnd('.')
+                        }
                     }
                 }
                 CellType.BOOLEAN -> cell.booleanCellValue.toString()
                 CellType.FORMULA -> {
                     try {
-                        cell.stringCellValue
+                        // 对于公式，先尝试获取计算结果
+                        when (cell.cachedFormulaResultType) {
+                            CellType.NUMERIC -> {
+                                if (DateUtil.isCellDateFormatted(cell)) {
+                                    // 格式化日期为 YYYY-MM-DD 格式
+                                    val dateFormat = SimpleDateFormat("yyyy-MM-dd")
+                                    dateFormat.format(cell.dateCellValue)
+                                } else {
+                                    val value = cell.numericCellValue
+                                    if (value == value.toLong().toDouble()) {
+                                        value.toLong().toString()
+                                    } else {
+                                        String.format("%.2f", value).trimEnd('0').trimEnd('.')
+                                    }
+                                }
+                            }
+                            CellType.STRING -> cell.stringCellValue
+                            CellType.BOOLEAN -> cell.booleanCellValue.toString()
+                            else -> cell.stringCellValue
+                        }
                     } catch (e: Exception) {
                         try {
-                            cell.numericCellValue.toString()
+                            cell.stringCellValue
                         } catch (e2: Exception) {
                             "公式错误"
                         }
