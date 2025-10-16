@@ -44,6 +44,9 @@ kotlin {
         jvmMain.dependencies {
             implementation("org.apache.poi:poi:5.2.5")
             implementation("org.apache.poi:poi-ooxml:5.2.5")
+            // 添加日志依赖，解决Log4j2错误
+            implementation("org.apache.logging.log4j:log4j-core:2.21.1")
+            implementation("org.apache.logging.log4j:log4j-slf4j-impl:2.21.1")
         }
 
         commonTest.dependencies {

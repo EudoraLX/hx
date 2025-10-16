@@ -1,4 +1,6 @@
-package io.github.kotlin.fibonacci
+package io.github.kotlin.fibonacci.core
+
+import io.github.kotlin.fibonacci.model.*
 
 class TableMerger {
     

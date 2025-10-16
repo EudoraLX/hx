@@ -1,5 +1,6 @@
-package io.github.kotlin.fibonacci
+package io.github.kotlin.fibonacci.core
 
+import io.github.kotlin.fibonacci.model.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -31,10 +32,10 @@ class SmartTableMerger {
         // 处理基础表格的每一行
         baseTable.rows.forEachIndexed { rowIndex, baseRow ->
             val updatedRow = baseRow.toMutableList()
-            val updatedRowFormulas = baseTable.getFormula(rowIndex, 0)?.let { 
-                baseTable.formulas[rowIndex].toMutableList() 
-            } ?: mutableListOf<String?>().apply { 
-                repeat(baseTable.columnCount) { add(null) }
+            // 初始化公式列表，复制原表的所有公式
+            val updatedRowFormulas = mutableListOf<String?>()
+            repeat(baseTable.columnCount) { colIndex ->
+                updatedRowFormulas.add(baseTable.getFormula(rowIndex, colIndex))
             }
             
             // 查找对应的更新行
@@ -48,8 +49,27 @@ class SmartTableMerger {
                 baseRow.forEachIndexed { colIndex, baseValue ->
                     val updateValue = updateRow[colIndex]
                     
+                    // 调试输出
+                    if (rowIndex < 3) { // 只输出前3行的调试信息
+                        println("行$rowIndex, 列$colIndex: 基础值='$baseValue', 更新值='$updateValue'")
+                    }
+                    
+                    // 如果更新值包含错误，跳过更新
+                    if (updateValue.contains("#VALUE!") || updateValue.contains("#ERROR!") || 
+                        updateValue.contains("VALUE") || updateValue.contains("ERROR")) {
+                        return@forEachIndexed
+                    }
+                    
                     // 如果更新值不为空且与基础值不同，则更新
-                    if (updateValue.isNotBlank() && updateValue != baseValue) {
+                    // 同时确保不会用空值覆盖有值的数据
+                    // 避免更新为"VALUE"等异常文本
+                    // 如果基础值是有意义的，而更新值是错误的，保持基础值
+                    if (updateValue.isNotBlank() && updateValue != baseValue && 
+                        !(baseValue.isNotBlank() && updateValue.isBlank()) &&
+                        updateValue != "VALUE" && !updateValue.startsWith("#") &&
+                        updateValue != "错误" && updateValue != "公式错误" &&
+                        !updateValue.contains("VALUE") && !updateValue.contains("ERROR") &&
+                        !(baseValue.isNotBlank() && (updateValue.startsWith("#") || updateValue.contains("VALUE")))) {
                         updatedRow[colIndex] = updateValue
                         changes.add(CellChange(
                             row = rowIndex,
@@ -62,7 +82,15 @@ class SmartTableMerger {
                         // 检查是否有公式需要更新
                         val updateFormula = updateTable.getFormula(updateRowIndex, colIndex)
                         if (updateFormula != null) {
+                            println("复制更新表格公式: 行$rowIndex, 列$colIndex, 公式=$updateFormula")
                             updatedRowFormulas[colIndex] = updateFormula
+                        } else {
+                            // 如果没有更新公式，保持原表的公式
+                            val baseFormula = baseTable.getFormula(rowIndex, colIndex)
+                            if (baseFormula != null) {
+                                println("保持原表公式: 行$rowIndex, 列$colIndex, 公式=$baseFormula")
+                                updatedRowFormulas[colIndex] = baseFormula
+                            }
                         }
                     }
                 }

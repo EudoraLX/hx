@@ -1,4 +1,4 @@
-package io.github.kotlin.fibonacci
+package io.github.kotlin.fibonacci.excel
 
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -46,7 +46,15 @@ class ExcelReader {
                     
                     for (cellIndex in 0 until headers.size) {
                         val cell = row.getCell(cellIndex)
-                        rowData.add(getCellValueAsString(cell))
+                        val cellValue = getCellValueAsString(cell)
+                        // 如果单元格值包含错误，使用空字符串
+                        val cleanValue = if (cellValue.contains("#VALUE!") || cellValue.contains("#ERROR!") || 
+                                           cellValue.contains("VALUE") || cellValue.contains("ERROR")) {
+                            ""
+                        } else {
+                            cellValue
+                        }
+                        rowData.add(cleanValue)
                         rowFormulas.add(getCellFormula(cell))
                     }
                     rows.add(rowData)
@@ -63,23 +71,39 @@ class ExcelReader {
     private fun getCellValueAsString(cell: Cell?): String {
         if (cell == null) return ""
         
+        // 首先检查单元格是否包含错误
+        if (cell.cellType == CellType.ERROR) {
+            return ""
+        }
+        
         return try {
             when (cell.cellType) {
-                CellType.STRING -> cell.stringCellValue
+                CellType.STRING -> {
+                    val stringValue = cell.stringCellValue
+                    // 检查是否为错误文本
+                    if (stringValue.startsWith("#") || stringValue.contains("VALUE") || stringValue.contains("ERROR")) {
+                        ""
+                    } else {
+                        stringValue
+                    }
+                }
                 CellType.NUMERIC -> {
                     if (DateUtil.isCellDateFormatted(cell)) {
                         // 格式化日期为 YYYY-MM-DD 格式
                         val dateFormat = SimpleDateFormat("yyyy-MM-dd")
                         dateFormat.format(cell.dateCellValue)
                     } else {
-                        // 格式化数字，避免过多小数位
+                        // 格式化数字，确保显示2位小数
                         val value = cell.numericCellValue
-                        if (value == value.toLong().toDouble()) {
+                        // 检查是否为0值，如果是0则返回空字符串
+                        if (value == 0.0) {
+                            ""
+                        } else if (value == value.toLong().toDouble()) {
                             // 如果是整数，显示为整数
                             value.toLong().toString()
                         } else {
-                            // 如果是小数，最多显示2位小数
-                            String.format("%.2f", value).trimEnd('0').trimEnd('.')
+                            // 如果是小数，显示2位小数
+                            String.format("%.2f", value)
                         }
                     }
                 }
@@ -95,26 +119,35 @@ class ExcelReader {
                                     dateFormat.format(cell.dateCellValue)
                                 } else {
                                     val value = cell.numericCellValue
-                                    if (value == value.toLong().toDouble()) {
+                                    // 检查是否为0值，如果是0则返回空字符串
+                                    if (value == 0.0) {
+                                        ""
+                                    } else if (value == value.toLong().toDouble()) {
                                         value.toLong().toString()
                                     } else {
-                                        String.format("%.2f", value).trimEnd('0').trimEnd('.')
+                                        String.format("%.2f", value)
                                     }
                                 }
                             }
-                            CellType.STRING -> cell.stringCellValue
+                            CellType.STRING -> {
+                                val stringValue = cell.stringCellValue
+                                // 检查是否为错误文本
+                                if (stringValue.startsWith("#") || stringValue.contains("VALUE") || stringValue.contains("ERROR")) {
+                                    ""
+                                } else {
+                                    stringValue
+                                }
+                            }
                             CellType.BOOLEAN -> cell.booleanCellValue.toString()
-                            else -> cell.stringCellValue
+                            CellType.ERROR -> "" // 公式结果为错误时返回空字符串
+                            else -> ""
                         }
                     } catch (e: Exception) {
-                        try {
-                            cell.stringCellValue
-                        } catch (e2: Exception) {
-                            "公式错误"
-                        }
+                        // 公式计算失败时返回空字符串
+                        ""
                     }
                 }
-                CellType.ERROR -> "错误"
+                CellType.ERROR -> "" // 错误单元格返回空字符串
                 CellType.BLANK -> ""
                 else -> ""
             }
@@ -139,3 +172,4 @@ class ExcelReader {
         }
     }
 }
+

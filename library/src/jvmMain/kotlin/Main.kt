@@ -1,9 +1,18 @@
 package io.github.kotlin.fibonacci
 
+import io.github.kotlin.fibonacci.model.*
+import io.github.kotlin.fibonacci.excel.*
+import io.github.kotlin.fibonacci.core.*
 import javax.swing.*
 import javax.swing.filechooser.FileNameExtensionFilter
 import java.awt.*
 import java.io.File
+
+// 全局变量
+var lastSelectedDirectory: File? = null
+var importedTables = mutableListOf<TableData>()
+var mergedTable: MergedTableData? = null
+var smartMergeResult: MergeResult? = null
 
 fun main() {
     SwingUtilities.invokeLater {
@@ -92,13 +101,6 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
     statusLabel.font = Font("微软雅黑", Font.PLAIN, 11)
     panel.add(statusLabel)
     
-    // 数据存储
-    val importedTables = mutableListOf<TableData>()
-    var mergedTable: MergedTableData? = null
-    var smartMergeResult: MergeResult? = null
-    
-    // 记住上次选择的路径
-    var lastSelectedDirectory: File? = null
     
     // 获取预览组件
     val previewInfoLabel = previewPanel.getComponent(0) as JLabel
@@ -371,11 +373,12 @@ private fun createControlPanel(previewPanel: JPanel): JPanel {
                     exporter.exportToExcel(mergedTable!!, fileChooser.selectedFile)
                 }
                 JOptionPane.showMessageDialog(panel, "导出成功！\n文件保存为: ${fileChooser.selectedFile.name}", "成功", JOptionPane.INFORMATION_MESSAGE)
-            } catch (e: Exception) {
-                JOptionPane.showMessageDialog(panel, "导出失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
-            }
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(panel, "导出失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
         }
     }
+    
+}
     
     return panel
 }

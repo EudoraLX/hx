@@ -1,4 +1,4 @@
-package io.github.kotlin.fibonacci
+package io.github.kotlin.fibonacci.model
 
 data class TableData(
     val fileName: String,
