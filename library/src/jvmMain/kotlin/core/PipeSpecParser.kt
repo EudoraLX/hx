@@ -1,0 +1,187 @@
+package io.github.kotlin.fibonacci.core
+
+import io.github.kotlin.fibonacci.model.PipeSpecification
+
+/**
+ * 管规格解析器
+ * 解析复杂的管规格字符串格式
+ */
+class PipeSpecParser {
+    
+    /**
+     * 解析管规格字符串
+     * 支持格式：
+     * - "Ø 130/154-Ø 204/226" (范围)
+     * - "Ø 102、Ø 113、Ø 120/Ø 137" (多个规格)
+     * - "Ø 90" (单个规格)
+     * - "Ø 180、Ø 200/Ø 217 (大)" (带大标记)
+     */
+    fun parsePipeSpecs(specString: String): List<PipeSpecification> {
+        val specs = mutableListOf<PipeSpecification>()
+        
+        if (specString.isBlank()) return specs
+        
+        // 移除Ø符号和空格
+        val cleanSpec = specString.replace("Ø", "").replace(" ", "")
+        
+        // 检查是否为大规格
+        val isLarge = cleanSpec.contains("(大)")
+        val hasCones = cleanSpec.contains("小锥") || cleanSpec.contains("大锥")
+        val coneType = when {
+            cleanSpec.contains("小锥") -> "小锥"
+            cleanSpec.contains("大锥") -> "大锥"
+            else -> ""
+        }
+        
+        // 移除特殊标记
+        val specWithoutMarks = cleanSpec.replace("(大)", "").replace("小锥", "").replace("大锥", "")
+        
+        // 解析各种格式
+        when {
+            // 范围格式：130/154-204/226
+            specWithoutMarks.contains("-") -> {
+                val parts = specWithoutMarks.split("-")
+                if (parts.size == 2) {
+                    val startSpec = parseSingleSpec(parts[0])
+                    val endSpec = parseSingleSpec(parts[1])
+                    if (startSpec != null && endSpec != null) {
+                        specs.add(PipeSpecification(
+                            innerDiameter = startSpec.first,
+                            outerDiameter = startSpec.second,
+                            isLarge = isLarge,
+                            hasCones = hasCones,
+                            coneType = coneType
+                        ))
+                        specs.add(PipeSpecification(
+                            innerDiameter = endSpec.first,
+                            outerDiameter = endSpec.second,
+                            isLarge = isLarge,
+                            hasCones = hasCones,
+                            coneType = coneType
+                        ))
+                    }
+                }
+            }
+            // 多个规格：102、113、120/137
+            specWithoutMarks.contains("、") -> {
+                val parts = specWithoutMarks.split("、")
+                parts.forEach { part ->
+                    val spec = parseSingleSpec(part)
+                    if (spec != null) {
+                        specs.add(PipeSpecification(
+                            innerDiameter = spec.first,
+                            outerDiameter = spec.second,
+                            isLarge = isLarge,
+                            hasCones = hasCones,
+                            coneType = coneType
+                        ))
+                    }
+                }
+            }
+            // 单个规格：90
+            else -> {
+                val spec = parseSingleSpec(specWithoutMarks)
+                if (spec != null) {
+                    specs.add(PipeSpecification(
+                        innerDiameter = spec.first,
+                        outerDiameter = spec.second,
+                        isLarge = isLarge,
+                        hasCones = hasCones,
+                        coneType = coneType
+                    ))
+                }
+            }
+        }
+        
+        return specs
+    }
+    
+    /**
+     * 解析单个规格
+     */
+    private fun parseSingleSpec(spec: String): Pair<Double, Double>? {
+        return when {
+            // 格式：130/154 (内径/外径)
+            spec.contains("/") -> {
+                val parts = spec.split("/")
+                if (parts.size == 2) {
+                    val inner = parts[0].toDoubleOrNull()
+                    val outer = parts[1].toDoubleOrNull()
+                    if (inner != null && outer != null) {
+                        return Pair(inner, outer)
+                    }
+                }
+                null
+            }
+            // 格式：90 (只有外径，内径需要根据经验推算)
+            else -> {
+                val outer = spec.toDoubleOrNull()
+                if (outer != null) {
+                    // 根据外径推算内径（需要根据实际业务规则调整）
+                    val inner = calculateInnerDiameter(outer)
+                    return Pair(inner, outer)
+                }
+                null
+            }
+        }
+    }
+    
+    /**
+     * 根据外径推算内径
+     */
+    private fun calculateInnerDiameter(outerDiameter: Double): Double {
+        // 根据实际业务规则推算内径
+        // 这里需要根据您的具体业务规则来调整
+        return when {
+            outerDiameter <= 150 -> outerDiameter - 20
+            outerDiameter <= 300 -> outerDiameter - 30
+            else -> outerDiameter - 40
+        }
+    }
+    
+    /**
+     * 检查管规格是否匹配
+     */
+    fun isPipeSpecMatch(orderSpec: PipeSpecification, ruleSpec: PipeSpecification): Boolean {
+        // 精确匹配
+        if (orderSpec.innerDiameter == ruleSpec.innerDiameter && 
+            orderSpec.outerDiameter == ruleSpec.outerDiameter) {
+            return true
+        }
+        
+        // 范围匹配（如果规则定义了范围）
+        // 这里需要根据实际的管规格格式来实现范围匹配逻辑
+        val innerDiff = kotlin.math.abs(orderSpec.innerDiameter - ruleSpec.innerDiameter)
+        val outerDiff = kotlin.math.abs(orderSpec.outerDiameter - ruleSpec.outerDiameter)
+        
+        // 允许一定的误差范围（±5mm）
+        return innerDiff <= 5.0 && outerDiff <= 5.0
+    }
+    
+    /**
+     * 从客户型号解析内外径
+     * 例如：FH-550/12.5-4295 -> 内径12.5, 外径550
+     */
+    fun parseFromCustomerModel(customerModel: String): PipeSpecification? {
+        if (customerModel.isBlank()) return null
+        
+        // 匹配格式：FH-550/12.5-4295
+        val pattern = Regex("FH-(\\d+)/(\\d+(?:\\.\\d+)?)-(\\d+)")
+        val match = pattern.find(customerModel)
+        
+        if (match != null) {
+            val outerDiameter = match.groupValues[1].toDoubleOrNull() ?: return null
+            val innerDiameter = match.groupValues[2].toDoubleOrNull() ?: return null
+            
+            return PipeSpecification(
+                innerDiameter = innerDiameter,
+                outerDiameter = outerDiameter,
+                isLarge = outerDiameter > 400,
+                hasCones = false,
+                coneType = ""
+            )
+        }
+        
+        return null
+    }
+}
