@@ -39,7 +39,10 @@ class EnhancedPreviewManager {
                     0 -> rule.machineId
                     1 -> rule.moldId
                     2 -> rule.pipeSpecs.joinToString(", ") { 
-                        "${it.innerDiameter}/${it.outerDiameter}${if (it.isLarge) "(大)" else ""}" 
+                        when {
+                            it.innerDiameter == 0.0 -> "Ø ${it.outerDiameter}${if (it.isLarge) "(大)" else ""}"
+                            else -> "${it.innerDiameter}/${it.outerDiameter}${if (it.isLarge) "(大)" else ""}"
+                        }
                     }
                     3 -> rule.description
                     4 -> "${rule.changeoverTime}h/${rule.pipeChangeTime}h"
@@ -237,6 +240,11 @@ class EnhancedPreviewManager {
                 return calculateSumRange(sumRange, table, row)
             }
             
+            // 处理简单的单元格引用，如 T2, T3, T4 等
+            if (formula.matches(Regex("^[A-Z]+\\d+$"))) {
+                return calculateSimpleCellReference(formula, table)
+            }
+            
             // 处理Excel单元格引用公式，如 AD2+V2-T2
             val cellRefPattern = Regex("[A-Z]+\\d+")
             val cellRefs = cellRefPattern.findAll(formula)
@@ -271,6 +279,43 @@ class EnhancedPreviewManager {
             return formula
         } catch (e: Exception) {
             return formula
+        }
+    }
+    
+    /**
+     * 计算简单单元格引用
+     */
+    private fun calculateSimpleCellReference(cellRef: String, table: TableData): String {
+        try {
+            val colLetter = cellRef.filter { it.isLetter() }
+            val rowNum = cellRef.filter { it.isDigit() }.toInt() - 1 // Excel行号从1开始，数组从0开始
+            
+            // 将列字母转换为数字
+            val colNum = colLetterToNumber(colLetter)
+            
+            // Excel行号从1开始，第1行是标题，第2行开始是数据
+            // 所以Excel第2行对应数组索引0，Excel第3行对应数组索引1
+            val arrayRowIndex = rowNum - 1
+            
+            if (colNum >= 0 && arrayRowIndex >= 0 && arrayRowIndex < table.rowCount && colNum < table.columnCount) {
+                val cellValue = table.getValue(arrayRowIndex, colNum)
+                val numericValue = cellValue.toDoubleOrNull()
+                
+                return if (numericValue != null) {
+                    numericValue.toInt().toString()
+                } else {
+                    // 如果引用的单元格也是公式，尝试递归计算
+                    if (cellValue.matches(Regex("^[A-Z]+\\d+$"))) {
+                        calculateSimpleCellReference(cellValue, table)
+                    } else {
+                        "0"
+                    }
+                }
+            }
+            
+            return "0"
+        } catch (e: Exception) {
+            return "0"
         }
     }
     
