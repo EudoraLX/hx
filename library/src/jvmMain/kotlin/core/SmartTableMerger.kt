@@ -18,6 +18,14 @@ data class CellChange(
     val sourceTable: String
 )
 
+data class OrderRemovalResult(
+    val originalTable: TableData,
+    val filteredTable: TableData,
+    val removedRows: List<List<String>>,
+    val removedCount: Int,
+    val remainingCount: Int
+)
+
 class SmartTableMerger {
     
     fun smartMerge(baseTable: TableData, updateTable: TableData): MergeResult {
@@ -48,10 +56,13 @@ class SmartTableMerger {
                 // 比较并更新不一致的列
                 baseRow.forEachIndexed { colIndex, baseValue ->
                     val updateValue = updateRow[colIndex]
+                    val baseFormula = baseTable.getFormula(rowIndex, colIndex)
                     
-                    // 调试输出
-                    if (rowIndex < 3) { // 只输出前3行的调试信息
-                        println("行$rowIndex, 列$colIndex: 基础值='$baseValue', 更新值='$updateValue'")
+                    // 如果原表该列有公式，跳过该列的更新（保持公式计算）
+                    if (baseFormula != null) {
+                        // 保持原表的公式
+                        updatedRowFormulas[colIndex] = baseFormula
+                        return@forEachIndexed
                     }
                     
                     // 如果更新值包含错误，跳过更新
@@ -79,18 +90,10 @@ class SmartTableMerger {
                             sourceTable = updateTable.fileName
                         ))
                         
-                        // 检查是否有公式需要更新
+                        // 处理公式逻辑：如果更新表有公式，使用更新表的公式
                         val updateFormula = updateTable.getFormula(updateRowIndex, colIndex)
                         if (updateFormula != null) {
-                            println("复制更新表格公式: 行$rowIndex, 列$colIndex, 公式=$updateFormula")
                             updatedRowFormulas[colIndex] = updateFormula
-                        } else {
-                            // 如果没有更新公式，保持原表的公式
-                            val baseFormula = baseTable.getFormula(rowIndex, colIndex)
-                            if (baseFormula != null) {
-                                println("保持原表公式: 行$rowIndex, 列$colIndex, 公式=$baseFormula")
-                                updatedRowFormulas[colIndex] = baseFormula
-                            }
                         }
                     }
                 }
@@ -167,6 +170,131 @@ class SmartTableMerger {
             }
             if (cellChanges.size > 10) {
                 appendLine("... 还有 ${cellChanges.size - 10} 个变更")
+            }
+        }
+    }
+    
+    /**
+     * 移除已完成的订单
+     * @param tableData 要处理的表格数据
+     * @param plannedColumnIndex 计划发货数量列的索引
+     * @param shippedColumnIndex 已发货数列的索引
+     * @return 移除结果，包含过滤后的数据和被移除的行
+     */
+    fun removeCompletedOrders(tableData: TableData, 
+                             plannedColumnIndex: Int, 
+                             shippedColumnIndex: Int): OrderRemovalResult {
+        val removedRows = mutableListOf<List<String>>()
+        val filteredRows = mutableListOf<List<String>>()
+        val filteredFormulas = mutableListOf<List<String?>>()
+        
+        tableData.rows.forEachIndexed { rowIndex, row ->
+            val plannedValue = if (plannedColumnIndex < row.size) row[plannedColumnIndex] else "0"
+            val shippedValue = if (shippedColumnIndex < row.size) row[shippedColumnIndex] else "0"
+            
+            // 尝试解析为数字进行比较
+            val planned = plannedValue.toDoubleOrNull() ?: 0.0
+            val shipped = shippedValue.toDoubleOrNull() ?: 0.0
+            
+            if (planned > 0 && planned == shipped) {
+                // 计划数量等于已发货数量，视为已完成
+                removedRows.add(row)
+            } else {
+                // 未完成，保留该行
+                filteredRows.add(row)
+                filteredFormulas.add(tableData.formulas[rowIndex])
+            }
+        }
+        
+        val filteredTable = TableData(
+            fileName = tableData.fileName,
+            headers = tableData.headers,
+            rows = filteredRows,
+            formulas = filteredFormulas
+        )
+        
+        return OrderRemovalResult(
+            originalTable = tableData,
+            filteredTable = filteredTable,
+            removedRows = removedRows,
+            removedCount = removedRows.size,
+            remainingCount = filteredRows.size
+        )
+    }
+    
+    /**
+     * 根据条件移除行
+     */
+    fun removeRowsByCondition(tableData: TableData, 
+                              columnIndex: Int, 
+                              condition: String, 
+                              value: String): OrderRemovalResult {
+        val removedRows = mutableListOf<List<String>>()
+        val filteredRows = mutableListOf<List<String>>()
+        val filteredFormulas = mutableListOf<List<String?>>()
+        
+        tableData.rows.forEachIndexed { rowIndex, row ->
+            val cellValue = if (columnIndex < row.size) row[columnIndex] else ""
+            val shouldRemove = when (condition) {
+                "等于" -> cellValue == value
+                "不等于" -> cellValue != value
+                "包含" -> cellValue.contains(value)
+                "不包含" -> !cellValue.contains(value)
+                "为空" -> cellValue.isBlank()
+                "不为空" -> cellValue.isNotBlank()
+                else -> false
+            }
+            
+            if (shouldRemove) {
+                removedRows.add(row)
+            } else {
+                filteredRows.add(row)
+                filteredFormulas.add(tableData.formulas[rowIndex])
+            }
+        }
+        
+        val filteredTable = TableData(
+            fileName = tableData.fileName,
+            headers = tableData.headers,
+            rows = filteredRows,
+            formulas = filteredFormulas
+        )
+        
+        return OrderRemovalResult(
+            originalTable = tableData,
+            filteredTable = filteredTable,
+            removedRows = removedRows,
+            removedCount = removedRows.size,
+            remainingCount = filteredRows.size
+        )
+    }
+    
+    /**
+     * 预览订单移除结果
+     */
+    fun previewOrderRemoval(tableData: TableData, 
+                           plannedColumnIndex: Int, 
+                           shippedColumnIndex: Int): String {
+        val result = removeCompletedOrders(tableData, plannedColumnIndex, shippedColumnIndex)
+        
+        return buildString {
+            appendLine("订单移除预览：")
+            appendLine("原始订单数: ${tableData.rowCount}")
+            appendLine("将移除订单数: ${result.removedCount}")
+            appendLine("剩余订单数: ${result.remainingCount}")
+            appendLine()
+            
+            if (result.removedRows.isNotEmpty()) {
+                appendLine("将被移除的订单：")
+                result.removedRows.take(5).forEachIndexed { index, row ->
+                    val orderId = if (row.isNotEmpty()) row[0] else "未知"
+                    val planned = if (plannedColumnIndex < row.size) row[plannedColumnIndex] else "0"
+                    val shipped = if (shippedColumnIndex < row.size) row[shippedColumnIndex] else "0"
+                    appendLine("  ${index + 1}. 序号: $orderId, 计划: $planned, 已发: $shipped")
+                }
+                if (result.removedRows.size > 5) {
+                    appendLine("  ... 还有 ${result.removedRows.size - 5} 个订单")
+                }
             }
         }
     }

@@ -153,7 +153,6 @@ class ExcelReader {
             }
         } catch (e: Exception) {
             // 如果读取单元格值时出现任何异常，返回空字符串
-            println("Error reading cell value: ${e.message}")
             ""
         }
     }

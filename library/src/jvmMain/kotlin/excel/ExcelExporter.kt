@@ -50,12 +50,9 @@ class ExcelExporter {
                 
                 // 调试输出前几行
                 if (rowIndex < 3) {
-                    println("导出: 行$rowIndex, 列$colIndex, 值='$cellValue', 公式=$formula")
                 }
                 
                 if (formula != null) {
-                    // 设置公式
-                    println("设置公式: 行$rowIndex, 列$colIndex, 公式=$formula")
                     cell.setCellFormula(formula)
                 } else {
                     // 设置普通值，保持与预览一致的格式化
@@ -164,12 +161,9 @@ class ExcelExporter {
                 
                 // 调试输出前几行
                 if (rowIndex < 3) {
-                    println("导出: 行$rowIndex, 列$colIndex, 值='$cellValue', 公式=$formula")
                 }
                 
                 if (formula != null) {
-                    // 设置公式
-                    println("设置公式: 行$rowIndex, 列$colIndex, 公式=$formula")
                     cell.setCellFormula(formula)
                 } else {
                     // 设置普通值，保持与预览一致的格式化
