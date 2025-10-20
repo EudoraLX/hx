@@ -24,6 +24,8 @@ data class ProductionOrder(
     val unshippedQuantity: Int,        // 未发数量
     val machine: String,               // 机台
     val pipeStatus: String = "",       // 管子情况
+    val pipeQuantity: Int = 0,         // 管子数量
+    val pipeArrivalDate: LocalDate? = null, // 管子到货日期
     val isCompleted: Boolean = false,   // 是否已完成
     val priority: OrderPriority,       // 订单优先级
     val status: OrderStatus,           // 订单状态
@@ -56,6 +58,20 @@ data class ProductionOrder(
         return priority == OrderPriority.URGENT || 
                (plannedDeliveryDate != null && 
                 plannedDeliveryDate.isBefore(LocalDate.now().plusDays(3)))
+    }
+    
+    /**
+     * 检查管子数量是否足够
+     */
+    fun hasEnoughPipeQuantity(): Boolean {
+        return pipeQuantity >= quantity * segments
+    }
+    
+    /**
+     * 检查管子是否已到货
+     */
+    fun isPipeArrived(): Boolean {
+        return pipeArrivalDate != null && pipeArrivalDate.isBefore(LocalDate.now()) || pipeArrivalDate == null
     }
 }
 
@@ -158,8 +174,8 @@ data class MachineRule(
     val moldId: String,                // 模具ID
     val pipeSpecs: List<PipeSpecification>,
     val description: String,           // 说明
-    val changeoverTime: Int = 12,      // 换模具时间(小时)
-    val pipeChangeTime: Int = 4,       // 换管时间(小时)
+    val changeoverTime: Int = 4,       // 换模具时间(小时)
+    val pipeChangeTime: Int = 12,      // 换接口时间(小时)
     val interchangeableWith: List<String> = emptyList() // 可互换机台
 )
 

@@ -224,17 +224,20 @@ class SchedulingPanel(
             // 立即更新预览显示转换结果
             uiManager.updatePreview()
             
+            // 自动切换到筛选结果标签页
+            uiManager.previewTabbedPane?.selectedIndex = 1 // 筛选结果是第2个标签页（索引1）
+            
             val message = when {
                 selectedStrategy == SchedulingStrategy.ORDER_FIRST && ordersToConvert.isEmpty() -> 
                     "订单转换完成！\n没有找到发货计划表中的订单\n请检查表格是否包含发货计划信息"
                 selectedStrategy == SchedulingStrategy.ORDER_FIRST -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n仅保留发货计划表中的订单\n请查看右侧预览区域的'筛选结果'标签页"
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n仅保留发货计划表中的订单\n已自动显示筛选结果"
                 hasShippingPlan -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n表格包含发货计划信息，已自动合并\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n表格包含发货计划信息，已自动合并\n已自动显示筛选结果"
                 uiManager.shippingPlanTable != null -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已合并发货计划表\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已合并发货计划表\n已自动显示筛选结果"
                 else -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已自动显示筛选结果"
             }
             
             JOptionPane.showMessageDialog(panel, message, "转换完成", JOptionPane.INFORMATION_MESSAGE)
@@ -283,6 +286,9 @@ class SchedulingPanel(
             // 更新预览显示排产结果
             uiManager.updatePreview()
             
+            // 自动切换到排产计划表标签页
+            uiManager.previewTabbedPane?.selectedIndex = 4 // 排产计划表是第5个标签页（索引4）
+            
             val stats = flowResult.schedulingResult.orders.size
             val strategyMessage = when (selectedStrategy) {
                 SchedulingStrategy.ORDER_FIRST -> "\n注意：订单优先策略只处理发货计划表中的订单"
@@ -290,7 +296,7 @@ class SchedulingPanel(
             }
             
             JOptionPane.showMessageDialog(panel, 
-                "排产完成！\n总订单数: $stats\n机台利用率: ${String.format("%.1f", flowResult.schedulingResult.utilizationRate * 100)}%\n按时交付率: ${String.format("%.1f", flowResult.schedulingResult.onTimeDeliveryRate * 100)}%$strategyMessage\n\n请查看右侧预览区域的'排产计划表'标签页查看结果", 
+                "排产完成！\n总订单数: $stats\n机台利用率: ${String.format("%.1f", flowResult.schedulingResult.utilizationRate * 100)}%\n按时交付率: ${String.format("%.1f", flowResult.schedulingResult.onTimeDeliveryRate * 100)}%$strategyMessage\n\n已自动显示排产计划表", 
                 "排产完成", JOptionPane.INFORMATION_MESSAGE)
         } catch (e: Exception) {
             JOptionPane.showMessageDialog(panel, "排产失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)

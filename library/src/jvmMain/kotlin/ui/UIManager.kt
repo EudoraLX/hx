@@ -32,7 +32,7 @@ class UIManager {
     private var previewTable: JTable? = null
     private var statusLabel: JLabel? = null
     private var enhancedPreviewManager = EnhancedPreviewManager()
-    private var previewTabbedPane: JTabbedPane? = null
+    var previewTabbedPane: JTabbedPane? = null
     private var dataSourceComboBox: JComboBox<String>? = null
     
     // 列更新监听器
@@ -95,7 +95,6 @@ class UIManager {
         tabbedPane.addTab("文件管理", FileManagementPanel(this, previewPanel).createPanel())
         
         // 标签页2: 订单筛选
-        tabbedPane.addTab("订单筛选", OrderFilterPanel(this, previewPanel).createPanel())
         
         // 标签页3: 机台配置
         tabbedPane.addTab("机台配置", MachineConfigPanel(this, previewPanel).createPanel())
@@ -134,10 +133,6 @@ class UIManager {
         val filteredDataPanel = createDataPreviewPanel("筛选结果", null)
         tabbedPane.addTab("筛选结果", filteredDataPanel)
         
-        // 优先级调整标签页
-        val priorityPreviewPanel = createPriorityPreviewPanel()
-        tabbedPane.addTab("优先级调整", priorityPreviewPanel)
-        
         // 机台配置标签页
         val machineConfigPanel = createMachineConfigPreviewPanel()
         tabbedPane.addTab("机台配置", machineConfigPanel)
@@ -149,6 +144,10 @@ class UIManager {
         // 排产计划表标签页
         val schedulingPlanPanel = createSchedulingPlanPreviewPanel()
         tabbedPane.addTab("排产计划表", schedulingPlanPanel)
+        
+        // 甘特图标签页
+        val ganttChartPanel = createGanttChartPanel()
+        tabbedPane.addTab("甘特图", ganttChartPanel)
         
         panel.add(tabbedPane, BorderLayout.CENTER)
         
@@ -204,47 +203,6 @@ class UIManager {
         val scrollPane = JScrollPane(table)
         table.autoResizeMode = JTable.AUTO_RESIZE_OFF
         
-        panel.add(scrollPane, BorderLayout.CENTER)
-        
-        return panel
-    }
-    
-    /**
-     * 创建优先级调整预览面板
-     */
-    private fun createPriorityPreviewPanel(): JPanel {
-        val panel = JPanel()
-        panel.layout = BorderLayout()
-        
-        // 优先级调整信息标签
-        val infoLabel = JLabel("优先级调整 - 根据发货计划表调整订单优先级")
-        infoLabel.font = Font("微软雅黑", Font.PLAIN, 12)
-        infoLabel.horizontalAlignment = SwingConstants.CENTER
-        panel.add(infoLabel, BorderLayout.NORTH)
-        
-        // 优先级调整表格
-        val table = JTable()
-        val scrollPane = JScrollPane(table)
-        table.autoResizeMode = JTable.AUTO_RESIZE_OFF
-        
-        // 设置优先级调整表格模型
-        val model = object : javax.swing.table.DefaultTableModel() {
-            override fun getColumnCount(): Int = 6
-            override fun getRowCount(): Int = 0
-            override fun getValueAt(row: Int, col: Int): Any = ""
-            override fun getColumnName(col: Int): String = when (col) {
-                0 -> "序号"
-                1 -> "公司型号"
-                2 -> "客户型号"
-                3 -> "原优先级"
-                4 -> "调整后优先级"
-                5 -> "调整原因"
-                else -> ""
-            }
-            override fun isCellEditable(row: Int, col: Int): Boolean = false
-        }
-        
-        table.model = model
         panel.add(scrollPane, BorderLayout.CENTER)
         
         return panel
@@ -348,10 +306,10 @@ class UIManager {
         // 更新各个标签页
         updateOriginalDataTab()
         updateFilteredDataTab()
-        updatePriorityTab()
         updateMachineConfigTab()
         updateSchedulingResultTab()
         updateSchedulingPlanTab()
+        updateGanttChartTab()
     }
     
     /**
@@ -397,7 +355,7 @@ class UIManager {
         } else if (productionOrders.isNotEmpty()) {
             // 如果没有筛选结果，显示所有已转换的订单
             productionOrders
-        } else {
+                    } else {
             emptyList()
         }
         
@@ -405,31 +363,11 @@ class UIManager {
     }
     
     /**
-     * 更新优先级调整标签页
-     */
-    private fun updatePriorityTab() {
-        val previewTabbedPane = this.previewTabbedPane ?: return
-        val priorityPanel = previewTabbedPane.getComponentAt(2) as? JPanel ?: return
-        val table = findTableInPanel(priorityPanel) ?: return
-        
-        // 使用筛选后的订单，如果没有则使用所有订单
-        val ordersToShow = if (filteredOrders.isNotEmpty()) {
-            filteredOrders
-        } else if (productionOrders.isNotEmpty()) {
-            productionOrders
-                    } else {
-            emptyList()
-        }
-        
-        enhancedPreviewManager.updatePriorityPreview(table, ordersToShow, shippingPlanTable)
-    }
-    
-    /**
      * 更新机台配置标签页
      */
     private fun updateMachineConfigTab() {
         val previewTabbedPane = this.previewTabbedPane ?: return
-        val machineConfigPanel = previewTabbedPane.getComponentAt(3) as? JPanel ?: return
+        val machineConfigPanel = previewTabbedPane.getComponentAt(2) as? JPanel ?: return
         val table = findTableInPanel(machineConfigPanel) ?: return
         
         enhancedPreviewManager.updateMachineConfigPreview(table)
@@ -440,7 +378,7 @@ class UIManager {
      */
     private fun updateSchedulingResultTab() {
         val previewTabbedPane = this.previewTabbedPane ?: return
-        val schedulingResultPanel = previewTabbedPane.getComponentAt(4) as? JPanel ?: return
+        val schedulingResultPanel = previewTabbedPane.getComponentAt(3) as? JPanel ?: return
         val table = findTableInPanel(schedulingResultPanel) ?: return
         
         enhancedPreviewManager.updateSchedulingResultPreview(table, schedulingResult)
@@ -451,7 +389,7 @@ class UIManager {
      */
     private fun updateSchedulingPlanTab() {
         val previewTabbedPane = this.previewTabbedPane ?: return
-        val schedulingPlanPanel = previewTabbedPane.getComponentAt(5) as? JPanel ?: return
+        val schedulingPlanPanel = previewTabbedPane.getComponentAt(4) as? JPanel ?: return
         val table = findTableInPanel(schedulingPlanPanel) ?: return
         
         enhancedPreviewManager.updateSchedulingPlanPreview(table, schedulingFlowResult?.schedulingPlanTable)
@@ -887,15 +825,19 @@ class UIManager {
             fileChooser.currentDirectory = lastDir
         }
         
-        // 根据当前预览类型设置默认文件名
-        val defaultFileName = when {
-            orderRemovalResult != null -> "移除已完成订单_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
-            smartMergeResult != null -> {
-                val smartMerger = io.github.kotlin.fibonacci.core.SmartTableMerger()
-                smartMerger.generateFileName()
-            }
-            mergedTable != null -> "合并结果.xlsx"
-            else -> "当前预览_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+        // 获取当前选中的预览标签页
+        val currentTabIndex = previewTabbedPane?.selectedIndex ?: 0
+        val currentTabTitle = previewTabbedPane?.getTitleAt(currentTabIndex) ?: "当前预览"
+        
+        // 根据当前预览标签页设置默认文件名
+        val defaultFileName = when (currentTabTitle) {
+            "原始数据" -> "原始数据_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            "筛选结果" -> "筛选结果_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            "优先级调整" -> "优先级调整_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            "机台配置" -> "机台配置_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            "排产结果" -> "排产结果_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            "排产计划表" -> "排产计划表_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
+            else -> "${currentTabTitle}_${java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))}.xlsx"
         }
         fileChooser.selectedFile = File(defaultFileName)
         
@@ -905,32 +847,91 @@ class UIManager {
             
             try {
                 val exporter = io.github.kotlin.fibonacci.excel.ExcelExporter()
-                when {
-                    orderRemovalResult != null -> {
-                        // 导出订单移除结果
-                        val filteredTable = orderRemovalResult!!.filteredTable
-                        val mergedTableData = io.github.kotlin.fibonacci.model.MergedTableData(
-                            sourceTables = listOf(filteredTable),
-                            headers = filteredTable.headers,
-                            rows = filteredTable.rows,
-                            formulas = filteredTable.formulas
-                        )
-                        exporter.exportToExcel(mergedTableData, fileChooser.selectedFile)
+                when (currentTabTitle) {
+                    "原始数据" -> {
+                        // 导出原始数据
+                        val currentTable = getCurrentTable()
+                        if (currentTable != null) {
+                            exporter.exportToExcel(currentTable, fileChooser.selectedFile)
+                        } else {
+                            javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有原始数据可导出", "提示", JOptionPane.WARNING_MESSAGE)
+                            return
+                        }
                     }
-                    smartMergeResult != null -> {
-                        // 导出智能合并结果
-                        val updatedTable = smartMergeResult!!.updatedTable
-                        val mergedTableData = io.github.kotlin.fibonacci.model.MergedTableData(
-                            sourceTables = listOf(smartMergeResult!!.originalTable, updatedTable),
-                            headers = updatedTable.headers,
-                            rows = updatedTable.rows,
-                            formulas = updatedTable.formulas
-                        )
-                        exporter.exportToExcel(mergedTableData, fileChooser.selectedFile)
+                    "筛选结果" -> {
+                        // 导出筛选结果
+                        val ordersToExport = if (filteredOrders.isNotEmpty()) {
+                            filteredOrders
+                        } else if (productionOrders.isNotEmpty()) {
+                            productionOrders
+                        } else {
+                            emptyList()
+                        }
+                        
+                        if (ordersToExport.isNotEmpty()) {
+                            val converter = io.github.kotlin.fibonacci.core.OrderConverter()
+                            val headers = listOf(
+                                "序号", "公司型号", "客户名称", "计划发货时间", "计划发货数量", 
+                                "数量（支）", "交付期", "内径", "外径", "管子数量", "管子到货", "日产量", "生产天数", 
+                                "剩余天数", "已发货数", "未发数量", "机台", "管子情况", 
+                                "优先级", "状态", "备注"
+                            )
+                            val tableData = converter.convertToTableData(ordersToExport, headers)
+                            exporter.exportToExcel(tableData, fileChooser.selectedFile)
+                        } else {
+                            javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有筛选结果可导出", "提示", JOptionPane.WARNING_MESSAGE)
+                            return
+                        }
                     }
-                    mergedTable != null -> {
-                        // 导出普通合并结果
-                        exporter.exportToExcel(mergedTable!!, fileChooser.selectedFile)
+                    "优先级调整" -> {
+                        // 导出优先级调整结果
+                        val ordersToExport = if (filteredOrders.isNotEmpty()) {
+                            filteredOrders
+                        } else if (productionOrders.isNotEmpty()) {
+                            productionOrders
+                        } else {
+                            emptyList()
+                        }
+                        
+                        if (ordersToExport.isNotEmpty()) {
+                            val converter = io.github.kotlin.fibonacci.core.OrderConverter()
+                            val headers = listOf(
+                                "序号", "公司型号", "客户名称", "计划发货时间", "计划发货数量", 
+                                "数量（支）", "交付期", "内径", "外径", "管子数量", "管子到货", "日产量", "生产天数", 
+                                "剩余天数", "已发货数", "未发数量", "机台", "管子情况", 
+                                "优先级", "状态", "备注"
+                            )
+                            val tableData = converter.convertToTableData(ordersToExport, headers)
+                            exporter.exportToExcel(tableData, fileChooser.selectedFile)
+                        } else {
+                            javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有优先级调整数据可导出", "提示", JOptionPane.WARNING_MESSAGE)
+                            return
+                        }
+                    }
+                    "机台配置" -> {
+                        // 导出机台配置
+                        val machineRules = getMachineRules()
+                        val tableData = createMachineConfigTableData(machineRules)
+                        exporter.exportToExcel(tableData, fileChooser.selectedFile)
+                    }
+                    "排产结果" -> {
+                        // 导出排产结果
+                        if (schedulingResult != null) {
+                            val tableData = createSchedulingResultTableData(schedulingResult!!)
+                            exporter.exportToExcel(tableData, fileChooser.selectedFile)
+                        } else {
+                            javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有排产结果可导出", "提示", JOptionPane.WARNING_MESSAGE)
+                            return
+                        }
+                    }
+                    "排产计划表" -> {
+                        // 导出排产计划表
+                        if (schedulingFlowResult != null) {
+                            exporter.exportToExcel(schedulingFlowResult!!.schedulingPlanTable, fileChooser.selectedFile)
+                        } else {
+                            javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有排产计划表可导出", "提示", JOptionPane.WARNING_MESSAGE)
+                            return
+                        }
                     }
                     else -> {
                         javax.swing.JOptionPane.showMessageDialog(parentComponent, "没有可导出的数据", "提示", JOptionPane.WARNING_MESSAGE)
@@ -941,6 +942,109 @@ class UIManager {
             } catch (e: Exception) {
                 javax.swing.JOptionPane.showMessageDialog(parentComponent, "下载失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
             }
+        }
+    }
+    
+    /**
+     * 创建机台配置表格数据
+     */
+    private fun createMachineConfigTableData(machineRules: List<MachineRule>): TableData {
+        val headers = listOf("机台", "模具", "管规格", "说明")
+        val rows = machineRules.map { rule ->
+            listOf(
+                rule.machineId,
+                rule.moldId,
+                rule.pipeSpecs.joinToString(", ") { it.toString() },
+                rule.description
+            )
+        }
+        
+        return TableData(
+            fileName = "机台配置",
+            headers = headers,
+            rows = rows,
+            formulas = List(rows.size) { List(headers.size) { null } }
+        )
+    }
+    
+    /**
+     * 创建排产结果表格数据
+     */
+    private fun createSchedulingResultTableData(schedulingResult: SchedulingResult): TableData {
+        val headers = listOf(
+            "序号", "公司型号", "客户名称", "机台", "模具", "计划开始时间", "计划完成时间", 
+            "管子数", "段数", "总段数", "日产量", "生产天数", "优先级", "状态", "组合信息"
+        )
+        
+        val rows = schedulingResult.orders.map { order ->
+            val totalSegments = order.quantity * order.segments
+            val machineRules = getMachineRules()
+            val machineRule = machineRules.find { it.machineId == order.machine }
+            val moldName = machineRule?.moldId ?: "未知模具"
+            
+            listOf(
+                order.id,
+                order.companyModel,
+                order.customerName,
+                order.machine,
+                moldName,
+                order.startDate?.toString() ?: "",
+                order.endDate?.toString() ?: "",
+                order.quantity.toString(),
+                order.segments.toString(),
+                totalSegments.toString(),
+                order.dailyProduction.toString(),
+                String.format("%.1f", order.productionDays),
+                order.priority.name,
+                order.status.name,
+                if (order.notes.contains("组合订单")) order.notes else ""
+            )
+        }
+        
+        return TableData(
+            fileName = "排产结果",
+            headers = headers,
+            rows = rows,
+            formulas = List(rows.size) { List(headers.size) { null } }
+        )
+    }
+    
+    /**
+     * 创建甘特图面板
+     */
+    private fun createGanttChartPanel(): JPanel {
+        val panel = JPanel()
+        panel.layout = BorderLayout()
+        
+        // 甘特图信息标签
+        val infoLabel = JLabel("甘特图 - 直观显示每天的排产安排")
+        infoLabel.font = Font("微软雅黑", Font.PLAIN, 12)
+        infoLabel.horizontalAlignment = SwingConstants.CENTER
+        panel.add(infoLabel, BorderLayout.NORTH)
+        
+        // 甘特图组件
+        val ganttChart = GanttChartPanel()
+        val scrollPane = JScrollPane(ganttChart)
+        scrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        
+        panel.add(scrollPane, BorderLayout.CENTER)
+        
+        return panel
+    }
+    
+    /**
+     * 更新甘特图标签页
+     */
+    private fun updateGanttChartTab() {
+        val previewTabbedPane = this.previewTabbedPane ?: return
+        val ganttChartPanel = previewTabbedPane.getComponentAt(5) as? JPanel ?: return // 甘特图是第6个标签页
+        val scrollPane = ganttChartPanel.getComponent(1) as? JScrollPane ?: return
+        val ganttChart = scrollPane.viewport.view as? GanttChartPanel ?: return
+        
+        // 更新甘特图数据
+        if (schedulingResult != null) {
+            ganttChart.updateSchedulingResult(schedulingResult!!)
         }
     }
 }

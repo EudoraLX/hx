@@ -63,6 +63,8 @@ class OrderConverter {
         val unshippedQuantity = getValueByHeader(row, headers, "未发数量")?.toIntOrNull() ?: 0
         val machine = getValueByHeader(row, headers, "机台") ?: ""
         val pipeStatus = getValueByHeader(row, headers, "管子情况") ?: ""
+        val pipeQuantity = getValueByHeader(row, headers, "管/棒数量")?.toIntOrNull() ?: 0
+        val pipeArrivalDate = parseDate(getValueByHeader(row, headers, "采购回馈（-1管子时间）"))
         
         // 确定订单状态
         val status = determineOrderStatus(plannedQuantity, shippedQuantity, unshippedQuantity)
@@ -90,6 +92,8 @@ class OrderConverter {
             unshippedQuantity = unshippedQuantity,
             machine = machine,
             pipeStatus = pipeStatus,
+            pipeQuantity = pipeQuantity,
+            pipeArrivalDate = pipeArrivalDate,
             isCompleted = isCompleted,
             priority = priority,
             status = status

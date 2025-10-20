@@ -40,14 +40,12 @@ class FileManagementPanel(
         
         val importButton = JButton("导入表格")
         val clearAllButton = JButton("清空全部")
-        val mergeButton = JButton("智能合并")
         val mergeTwoTablesButton = JButton("合并两张表")
         val exportButton = JButton("导出合并结果")
         val downloadButton = JButton("下载当前预览")
         
         buttonPanel.add(importButton)
         buttonPanel.add(clearAllButton)
-        buttonPanel.add(mergeButton)
         buttonPanel.add(mergeTwoTablesButton)
         buttonPanel.add(exportButton)
         buttonPanel.add(downloadButton)
@@ -64,7 +62,7 @@ class FileManagementPanel(
         uiManager.setStatusLabel(statusLabel)
         
         // 绑定事件处理器
-        bindEventHandlers(panel, fileList, importButton, clearAllButton, mergeButton, mergeTwoTablesButton, exportButton, downloadButton)
+        bindEventHandlers(panel, fileList, importButton, clearAllButton, mergeTwoTablesButton, exportButton, downloadButton)
         
         return panel
     }
@@ -74,7 +72,6 @@ class FileManagementPanel(
         fileList: JList<String>,
         importButton: JButton,
         clearAllButton: JButton,
-        mergeButton: JButton,
         mergeTwoTablesButton: JButton,
         exportButton: JButton,
         downloadButton: JButton
@@ -97,11 +94,6 @@ class FileManagementPanel(
         }
         
         // 合并按钮事件
-        mergeButton.addActionListener {
-            handleSmartMerge(panel)
-            uiManager.updatePreview()
-        }
-        
         // 合并两张表按钮事件
         mergeTwoTablesButton.addActionListener {
             handleMergeTwoTables(panel)

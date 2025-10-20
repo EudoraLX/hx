@@ -106,8 +106,8 @@ class EnhancedPreviewManager {
         }
         
         val headers = listOf(
-            "序号", "公司型号", "客户型号", "客户名称", "计划发货时间", "计划发货数量", 
-            "数量（支）", "交付期", "内径", "外径", "日产量", "生产天数", 
+            "序号", "公司型号", "客户名称", "计划发货时间", "计划发货数量", 
+            "数量（支）", "交付期", "内径", "外径", "管子数量", "管子到货", "日产量", "生产天数", 
             "剩余天数", "已发货数", "未发数量", "机台", "管子情况", 
             "优先级", "状态", "备注"
         )
@@ -120,24 +120,25 @@ class EnhancedPreviewManager {
                 return when (col) {
                     0 -> order.id
                     1 -> order.companyModel
-                    2 -> order.customerModel
-                    3 -> order.customerName
-                    4 -> order.plannedDeliveryDate?.toString() ?: ""
-                    5 -> order.plannedQuantity.toString()
-                    6 -> order.quantity.toString()
-                    7 -> order.deliveryPeriod?.toString() ?: ""
-                    8 -> order.innerDiameter.toString()
-                    9 -> order.outerDiameter.toString()
-                    10 -> order.dailyProduction.toString()
-                    11 -> order.productionDays.toString()
-                    12 -> order.remainingDays.toString()
-                    13 -> order.shippedQuantity.toString()
-                    14 -> order.unshippedQuantity.toString()
-                    15 -> order.machine
-                    16 -> order.pipeStatus
-                    17 -> order.priority.name
-                    18 -> order.status.name
-                    19 -> order.notes
+                    2 -> order.customerName
+                    3 -> order.plannedDeliveryDate?.toString() ?: ""
+                    4 -> order.plannedQuantity.toString()
+                    5 -> order.quantity.toString()
+                    6 -> order.deliveryPeriod?.toString() ?: ""
+                    7 -> order.innerDiameter.toString()
+                    8 -> order.outerDiameter.toString()
+                    9 -> order.pipeQuantity.toString()
+                    10 -> order.pipeArrivalDate?.toString() ?: "已到货"
+                    11 -> order.dailyProduction.toString()
+                    12 -> order.productionDays.toString()
+                    13 -> order.remainingDays.toString()
+                    14 -> order.shippedQuantity.toString()
+                    15 -> order.unshippedQuantity.toString()
+                    16 -> order.machine
+                    17 -> order.pipeStatus
+                    18 -> order.priority.name
+                    19 -> order.status.name
+                    20 -> order.notes
                     else -> ""
                 }
             }
@@ -159,7 +160,7 @@ class EnhancedPreviewManager {
         }
         
         val headers = listOf(
-            "序号", "公司型号", "客户型号", "客户名称", "原优先级", "调整后优先级", "调整原因"
+            "序号", "公司型号", "客户名称", "原优先级", "调整后优先级", "调整原因"
         )
         
         val model = object : javax.swing.table.DefaultTableModel() {
@@ -172,11 +173,10 @@ class EnhancedPreviewManager {
                 return when (col) {
                     0 -> order.id
                     1 -> order.companyModel
-                    2 -> order.customerModel
-                    3 -> order.customerName
-                    4 -> order.priority.name
-                    5 -> if (isInShippingPlan) "紧急" else order.priority.name
-                    6 -> if (isInShippingPlan) "发货计划表优先" else "无调整"
+                    2 -> order.customerName
+                    3 -> order.priority.name
+                    4 -> if (isInShippingPlan) "紧急" else order.priority.name
+                    5 -> if (isInShippingPlan) "发货计划表优先" else "无调整"
                     else -> ""
                 }
             }
@@ -251,8 +251,8 @@ class EnhancedPreviewManager {
         }
         
         val headers = listOf(
-            "序号", "公司型号", "客户型号", "客户名称", "机台", "模具", "计划开始时间", "计划完成时间", 
-            "管子数", "段数", "总段数", "日产量", "生产天数", "优先级", "状态", "组合信息"
+            "序号", "公司型号", "客户名称", "机台", "模具", "计划开始时间", "计划完成时间", 
+            "管子数", "段数", "总段数", "管子库存", "日产量", "生产天数", "优先级", "状态", "组合信息"
         )
         
         val model = object : javax.swing.table.DefaultTableModel() {
@@ -265,15 +265,15 @@ class EnhancedPreviewManager {
                 return when (col) {
                     0 -> order.id
                     1 -> order.companyModel
-                    2 -> order.customerModel
-                    3 -> order.customerName
-                    4 -> order.machine
-                    5 -> getMoldForOrder(order, schedulingResult.machineSchedule)
-                    6 -> order.startDate?.toString() ?: ""
-                    7 -> order.endDate?.toString() ?: ""
-                    8 -> order.quantity.toString()
-                    9 -> order.segments.toString()
-                    10 -> totalSegments.toString()
+                    2 -> order.customerName
+                    3 -> order.machine
+                    4 -> getMoldForOrder(order, schedulingResult.machineSchedule)
+                    5 -> order.startDate?.toString() ?: ""
+                    6 -> order.endDate?.toString() ?: ""
+                    7 -> order.quantity.toString()
+                    8 -> order.segments.toString()
+                    9 -> totalSegments.toString()
+                    10 -> order.pipeQuantity.toString()
                     11 -> order.dailyProduction.toString()
                     12 -> String.format("%.1f", order.productionDays)
                     13 -> order.priority.name
@@ -294,9 +294,18 @@ class EnhancedPreviewManager {
      * 获取订单对应的模具
      */
     private fun getMoldForOrder(order: ProductionOrder, machineSchedule: Map<String, List<ProductionOrder>>): String {
-        val machineOrders = machineSchedule[order.machine] ?: return ""
-        val orderIndex = machineOrders.indexOf(order)
-        return if (orderIndex >= 0) "模具${orderIndex + 1}" else ""
+        // 根据机台配置获取模具名称
+        val machineRules = machineAssignmentEngine.createDefaultMachineRules()
+        val machineRule = machineRules.find { it.machineId == order.machine }
+        
+        return if (machineRule != null) {
+            machineRule.moldId
+        } else {
+            // 如果没有找到对应的机台规则，使用默认格式
+            val machineOrders = machineSchedule[order.machine] ?: return ""
+            val orderIndex = machineOrders.indexOf(order)
+            if (orderIndex >= 0) "模具${orderIndex + 1}" else ""
+        }
     }
     
     /**

@@ -37,7 +37,7 @@ class SmartScheduler {
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
                                       constraints: SchedulingConstraints): SchedulingResult {
-        // 按优先级排序：发货计划表优先 > 紧急订单 > 其他
+        // 按优先级排序：发货计划表优先 > 管子数量足够 > 紧急订单 > 其他
         val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
             when {
                 it.priority == OrderPriority.URGENT -> 0  // 发货计划表订单
@@ -45,7 +45,9 @@ class SmartScheduler {
                 it.priority == OrderPriority.MEDIUM -> 2
                 else -> 3
             }
-        }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
+        .thenBy { !it.isPipeArrived() } // 管子已到货的优先
+        .thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
         
         val machineSchedule = mutableMapOf<String, MutableList<ProductionOrder>>()
         val scheduledOrders = mutableListOf<ProductionOrder>()
@@ -205,7 +207,8 @@ class SmartScheduler {
                                    constraints: SchedulingConstraints): SchedulingResult {
         val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
             it.plannedDeliveryDate ?: LocalDate.MAX 
-        })
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
+        .thenBy { !it.isPipeArrived() }) // 管子已到货的优先
         val machineSchedule = mutableMapOf<String, MutableList<ProductionOrder>>()
         val scheduledOrders = mutableListOf<ProductionOrder>()
         val conflicts = mutableListOf<String>()
@@ -275,11 +278,13 @@ class SmartScheduler {
             )
         }
         
-        // 对发货计划订单按交付期和数量排序
+        // 对发货计划订单按交付期、管子数量、数量排序
         val sortedOrders = shippingPlanOrders.sortedWith(compareBy<ProductionOrder> { 
             // 按交付期排序
             it.plannedDeliveryDate ?: LocalDate.MAX 
-        }.thenBy { 
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
+        .thenBy { !it.isPipeArrived() } // 管子已到货的优先
+        .thenBy { 
             // 按未发数量排序（数量多的优先）
             -it.unshippedQuantity 
         })
@@ -331,7 +336,7 @@ class SmartScheduler {
     private fun balancedScheduling(orders: List<ProductionOrder>, 
                                   machines: List<Machine>,
                                   constraints: SchedulingConstraints): SchedulingResult {
-        // 综合考虑产能、时间、订单优先级
+        // 综合考虑产能、时间、订单优先级、管子数量
         val weightedOrders = orders.map { order ->
             val priorityWeight = when (order.priority) {
                 OrderPriority.URGENT -> 4.0
@@ -343,7 +348,11 @@ class SmartScheduler {
             val urgencyWeight = if (order.isUrgent()) 2.0 else 1.0
             val quantityWeight = order.quantity.toDouble() / (orders.maxOfOrNull { it.quantity }?.toDouble() ?: 1.0)
             
-            val totalWeight = priorityWeight * urgencyWeight * quantityWeight
+            // 管子数量权重：管子数量足够的订单权重更高
+            val pipeWeight = if (order.hasEnoughPipeQuantity()) 2.0 else 0.5
+            val pipeArrivalWeight = if (order.isPipeArrived()) 1.5 else 0.8
+            
+            val totalWeight = priorityWeight * urgencyWeight * quantityWeight * pipeWeight * pipeArrivalWeight
             
             order to totalWeight
         }.sortedByDescending { it.second }.map { it.first }
