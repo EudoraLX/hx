@@ -113,13 +113,12 @@ class PipeSpecParser {
                 }
                 null
             }
-            // 格式：90 (只有外径，内径需要根据经验推算)
+            // 格式：90 (只有外径，内径设为0表示未指定)
             else -> {
                 val outer = spec.toDoubleOrNull()
                 if (outer != null) {
-                    // 根据外径推算内径（需要根据实际业务规则调整）
-                    val inner = calculateInnerDiameter(outer)
-                    return Pair(inner, outer)
+                    // 对于只有外径的情况，内径设为0表示未指定
+                    return Pair(0.0, outer)
                 }
                 null
             }

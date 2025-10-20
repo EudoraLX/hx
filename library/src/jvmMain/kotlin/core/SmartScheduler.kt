@@ -32,11 +32,21 @@ class SmartScheduler {
     
     /**
      * 产能优先排产
+     * 基于管子数×段数=总段数，每个机台一次生产1段
      */
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
                                       constraints: SchedulingConstraints): SchedulingResult {
-        val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { it.quantity }.reversed())
+        // 按优先级排序：发货计划表优先 > 紧急订单 > 其他
+        val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
+            when {
+                it.priority == OrderPriority.URGENT -> 0  // 发货计划表订单
+                it.priority == OrderPriority.HIGH -> 1
+                it.priority == OrderPriority.MEDIUM -> 2
+                else -> 3
+            }
+        }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
+        
         val machineSchedule = mutableMapOf<String, MutableList<ProductionOrder>>()
         val scheduledOrders = mutableListOf<ProductionOrder>()
         val conflicts = mutableListOf<String>()
@@ -46,28 +56,51 @@ class SmartScheduler {
             machineSchedule[machine.id] = mutableListOf()
         }
         
-        var currentDate = LocalDate.now()
+        // 组合相同规格的订单进行生产
+        val combinedOrders = combineOrdersBySpec(sortedOrders)
         
-        for (order in sortedOrders) {
-            val bestMachine = findBestMachineForOrder(order, machines, machineSchedule, currentDate, constraints)
+        // 按优先级和时间排序
+        val finalOrders = combinedOrders.sortedWith(compareBy<ProductionOrder> { 
+            when (it.priority) {
+                OrderPriority.URGENT -> 0
+                OrderPriority.HIGH -> 1
+                OrderPriority.MEDIUM -> 2
+                OrderPriority.LOW -> 3
+            }
+        }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
+        
+        // 并行排产：每个机台可以同时处理不同模具的订单
+        val machineAvailability = mutableMapOf<String, LocalDate>()
+        machines.forEach { machine ->
+            machineAvailability[machine.id] = LocalDate.now()
+        }
+        
+        for (order in finalOrders) {
+            // 计算总段数：管子数 × 段数
+            val totalSegments = order.quantity * order.segments
+            val productionDays = totalSegments.toDouble() / order.dailyProduction
+            
+            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
             
             if (bestMachine != null) {
-                val productionDays = order.calculateProductionDays()
-                val startDate = currentDate
+                val startDate = machineAvailability[bestMachine.id]!!
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
                 
                 val scheduledOrder = order.copy(
                     startDate = startDate,
                     endDate = endDate,
                     status = OrderStatus.IN_PRODUCTION,
-                    machine = bestMachine.id
+                    machine = bestMachine.id,
+                    productionDays = productionDays,
+                    remainingDays = productionDays
                 )
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)
                 scheduledOrders.add(scheduledOrder)
                 
-                // 更新当前日期到下一个可用时间
-                currentDate = endDate.plusDays(1)
+                // 更新机台可用时间（考虑换模/换管时间）
+                val changeoverTime = getChangeoverTime(order, bestMachine)
+                machineAvailability[bestMachine.id] = endDate.plusDays((changeoverTime + 1).toLong())
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
             }
@@ -81,6 +114,87 @@ class SmartScheduler {
             onTimeDeliveryRate = calculateOnTimeDeliveryRate(scheduledOrders),
             conflicts = conflicts
         )
+    }
+    
+    /**
+     * 组合相同规格的订单
+     * 将相同内外径、相同机台的订单组合在一起生产，减少换模/换管次数
+     */
+    private fun combineOrdersBySpec(orders: List<ProductionOrder>): List<ProductionOrder> {
+        val combinedOrders = mutableListOf<ProductionOrder>()
+        val processedOrders = mutableSetOf<String>()
+        
+        for (order in orders) {
+            if (processedOrders.contains(order.id)) continue
+            
+            // 查找相同规格的订单（相同内外径）
+            val sameSpecOrders = orders.filter { 
+                it.id != order.id && 
+                !processedOrders.contains(it.id) &&
+                it.innerDiameter == order.innerDiameter && 
+                it.outerDiameter == order.outerDiameter &&
+                it.priority == order.priority  // 相同优先级的订单才能组合
+            }
+            
+            if (sameSpecOrders.isNotEmpty()) {
+                // 组合订单：合并数量，使用第一个订单的其他信息
+                val totalQuantity = order.quantity + sameSpecOrders.sumOf { it.quantity }
+                val combinedOrder = order.copy(
+                    quantity = totalQuantity,
+                    notes = "组合订单: ${order.id} + ${sameSpecOrders.joinToString(", ") { it.id }}"
+                )
+                
+                combinedOrders.add(combinedOrder)
+                processedOrders.add(order.id)
+                processedOrders.addAll(sameSpecOrders.map { it.id })
+            } else {
+                // 没有相同规格的订单，单独处理
+                combinedOrders.add(order)
+                processedOrders.add(order.id)
+            }
+        }
+        
+        return combinedOrders
+    }
+    
+    /**
+     * 根据机台可用性找到最佳机台
+     */
+    private fun findBestMachineForOrderWithAvailability(
+        order: ProductionOrder, 
+        machines: List<Machine>, 
+        machineAvailability: Map<String, LocalDate>,
+        constraints: SchedulingConstraints
+    ): Machine? {
+        val suitableMachines = machines.filter { machine ->
+            // 检查机台是否适合该订单（基于管规格）
+            isMachineSuitableForOrder(order, machine)
+        }
+        
+        if (suitableMachines.isEmpty()) return null
+        
+        // 选择可用时间最早的机台
+        return suitableMachines.minByOrNull { machine ->
+            machineAvailability[machine.id] ?: LocalDate.MAX
+        }
+    }
+    
+    /**
+     * 检查机台是否适合订单
+     */
+    private fun isMachineSuitableForOrder(order: ProductionOrder, machine: Machine): Boolean {
+        // 这里应该根据机台配置规则来判断
+        // 暂时返回true，实际应该根据管规格匹配
+        return true
+    }
+    
+    /**
+     * 获取换模/换管时间
+     */
+    private fun getChangeoverTime(order: ProductionOrder, machine: Machine): Int {
+        // 根据机台配置规则获取换模/换管时间
+        // 暂时返回默认值
+        return 1 // 1天换模时间
     }
     
     /**
@@ -141,18 +255,34 @@ class SmartScheduler {
     
     /**
      * 订单优先排产
+     * 只处理发货计划表中的订单（URGENT优先级）
      */
     private fun orderFirstScheduling(orders: List<ProductionOrder>, 
                                     machines: List<Machine>,
                                     constraints: SchedulingConstraints): SchedulingResult {
-        val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
-            when (it.priority) {
-                OrderPriority.URGENT -> 0
-                OrderPriority.HIGH -> 1
-                OrderPriority.MEDIUM -> 2
-                OrderPriority.LOW -> 3
-            }
-        }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
+        // 订单优先策略：只处理发货计划表中的订单（URGENT优先级）
+        val shippingPlanOrders = orders.filter { it.priority == OrderPriority.URGENT }
+        
+        if (shippingPlanOrders.isEmpty()) {
+            // 如果没有发货计划订单，返回空结果
+            return SchedulingResult(
+                orders = emptyList(),
+                machineSchedule = emptyMap(),
+                totalProductionDays = 0,
+                conflicts = listOf("没有找到发货计划表中的订单"),
+                utilizationRate = 0.0,
+                onTimeDeliveryRate = 0.0
+            )
+        }
+        
+        // 对发货计划订单按交付期和数量排序
+        val sortedOrders = shippingPlanOrders.sortedWith(compareBy<ProductionOrder> { 
+            // 按交付期排序
+            it.plannedDeliveryDate ?: LocalDate.MAX 
+        }.thenBy { 
+            // 按未发数量排序（数量多的优先）
+            -it.unshippedQuantity 
+        })
         
         val machineSchedule = mutableMapOf<String, MutableList<ProductionOrder>>()
         val scheduledOrders = mutableListOf<ProductionOrder>()

@@ -298,4 +298,41 @@ class SmartTableMerger {
             }
         }
     }
+    
+    /**
+     * 根据订单ID列表移除行
+     */
+    fun removeRowsByOrderIds(table: TableData, orderIds: List<String>): OrderRemovalResult {
+        val filteredRows = mutableListOf<List<String>>()
+        val filteredFormulas = mutableListOf<List<String?>>()
+        val removedRows = mutableListOf<List<String>>()
+        
+        table.rows.forEachIndexed { rowIndex, row ->
+            val orderId = if (row.isNotEmpty()) row[0] else ""
+            
+            if (orderId in orderIds) {
+                // 移除这一行
+                removedRows.add(row)
+            } else {
+                // 保留这一行
+                filteredRows.add(row)
+                filteredFormulas.add(table.formulas.getOrNull(rowIndex) ?: List(table.headers.size) { null })
+            }
+        }
+        
+        val filteredTable = TableData(
+            fileName = table.fileName,
+            headers = table.headers,
+            rows = filteredRows,
+            formulas = filteredFormulas
+        )
+        
+        return OrderRemovalResult(
+            originalTable = table,
+            filteredTable = filteredTable,
+            removedRows = removedRows,
+            removedCount = removedRows.size,
+            remainingCount = filteredRows.size
+        )
+    }
 }

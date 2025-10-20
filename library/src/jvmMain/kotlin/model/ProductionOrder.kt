@@ -9,9 +9,11 @@ data class ProductionOrder(
     val id: String,                    // 序号
     val companyModel: String,          // 公司型号
     val customerModel: String = "",    // 客户型号
+    val customerName: String = "",     // 客户名称
     val plannedDeliveryDate: LocalDate?, // 计划发货时间
     val plannedQuantity: Int,          // 计划发货数量
     val quantity: Int,                 // 数量（支）
+    val segments: Int = 1,             // 段数
     val deliveryPeriod: LocalDate?,    // 交付期
     val innerDiameter: Double = 0.0,   // 内径
     val outerDiameter: Double = 0.0,   // 外径

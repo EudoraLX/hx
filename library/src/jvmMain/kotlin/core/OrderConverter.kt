@@ -48,9 +48,11 @@ class OrderConverter {
         val id = getValueByHeader(row, headers, "序号") ?: row[0].takeIf { it.isNotBlank() } ?: return null
         val companyModel = getValueByHeader(row, headers, "公司型号") ?: ""
         val customerModel = getValueByHeader(row, headers, "客户型号") ?: ""
+        val customerName = getValueByHeader(row, headers, "客户名称") ?: ""
         val plannedDeliveryDate = parseDate(getValueByHeader(row, headers, "计划发货时间"))
         val plannedQuantity = getValueByHeader(row, headers, "计划发货数量")?.toIntOrNull() ?: 0
         val quantity = getValueByHeader(row, headers, "数量（支）")?.toIntOrNull() ?: 0
+        val segments = getValueByHeader(row, headers, "段数")?.toIntOrNull() ?: 1
         val deliveryPeriod = parseDate(getValueByHeader(row, headers, "交付期"))
         val innerDiameter = getValueByHeader(row, headers, "内径")?.toDoubleOrNull() ?: 0.0
         val outerDiameter = getValueByHeader(row, headers, "外径")?.toDoubleOrNull() ?: 0.0
@@ -73,9 +75,11 @@ class OrderConverter {
             id = id,
             companyModel = companyModel,
             customerModel = customerModel,
+            customerName = customerName,
             plannedDeliveryDate = plannedDeliveryDate,
             plannedQuantity = plannedQuantity,
             quantity = quantity,
+            segments = segments,
             deliveryPeriod = deliveryPeriod,
             innerDiameter = innerDiameter,
             outerDiameter = outerDiameter,

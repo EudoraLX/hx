@@ -106,7 +106,7 @@ class EnhancedPreviewManager {
         }
         
         val headers = listOf(
-            "序号", "公司型号", "客户型号", "计划发货时间", "计划发货数量", 
+            "序号", "公司型号", "客户型号", "客户名称", "计划发货时间", "计划发货数量", 
             "数量（支）", "交付期", "内径", "外径", "日产量", "生产天数", 
             "剩余天数", "已发货数", "未发数量", "机台", "管子情况", 
             "优先级", "状态", "备注"
@@ -121,26 +121,119 @@ class EnhancedPreviewManager {
                     0 -> order.id
                     1 -> order.companyModel
                     2 -> order.customerModel
-                    3 -> order.plannedDeliveryDate?.toString() ?: ""
-                    4 -> order.plannedQuantity.toString()
-                    5 -> order.quantity.toString()
-                    6 -> order.deliveryPeriod?.toString() ?: ""
-                    7 -> order.innerDiameter.toString()
-                    8 -> order.outerDiameter.toString()
-                    9 -> order.dailyProduction.toString()
-                    10 -> order.productionDays.toString()
-                    11 -> order.remainingDays.toString()
-                    12 -> order.shippedQuantity.toString()
-                    13 -> order.unshippedQuantity.toString()
-                    14 -> order.machine
-                    15 -> order.pipeStatus
-                    16 -> order.priority.name
-                    17 -> order.status.name
-                    18 -> order.notes
+                    3 -> order.customerName
+                    4 -> order.plannedDeliveryDate?.toString() ?: ""
+                    5 -> order.plannedQuantity.toString()
+                    6 -> order.quantity.toString()
+                    7 -> order.deliveryPeriod?.toString() ?: ""
+                    8 -> order.innerDiameter.toString()
+                    9 -> order.outerDiameter.toString()
+                    10 -> order.dailyProduction.toString()
+                    11 -> order.productionDays.toString()
+                    12 -> order.remainingDays.toString()
+                    13 -> order.shippedQuantity.toString()
+                    14 -> order.unshippedQuantity.toString()
+                    15 -> order.machine
+                    16 -> order.pipeStatus
+                    17 -> order.priority.name
+                    18 -> order.status.name
+                    19 -> order.notes
                     else -> ""
                 }
             }
             override fun getColumnName(col: Int): String = headers[col]
+            override fun isCellEditable(row: Int, col: Int): Boolean = false
+        }
+        
+        table.model = model
+        adjustColumnWidths(table)
+    }
+    
+    /**
+     * 更新优先级调整预览
+     */
+    fun updatePriorityPreview(table: JTable, orders: List<ProductionOrder>, shippingPlanTable: TableData?) {
+        if (orders.isEmpty()) {
+            table.model = javax.swing.table.DefaultTableModel()
+            return
+        }
+        
+        val headers = listOf(
+            "序号", "公司型号", "客户型号", "客户名称", "原优先级", "调整后优先级", "调整原因"
+        )
+        
+        val model = object : javax.swing.table.DefaultTableModel() {
+            override fun getColumnCount(): Int = headers.size
+            override fun getRowCount(): Int = orders.size
+            override fun getValueAt(row: Int, col: Int): Any {
+                val order = orders[row]
+                val isInShippingPlan = shippingPlanTable?.let { isOrderInShippingPlan(order, it) } ?: false
+                
+                return when (col) {
+                    0 -> order.id
+                    1 -> order.companyModel
+                    2 -> order.customerModel
+                    3 -> order.customerName
+                    4 -> order.priority.name
+                    5 -> if (isInShippingPlan) "紧急" else order.priority.name
+                    6 -> if (isInShippingPlan) "发货计划表优先" else "无调整"
+                    else -> ""
+                }
+            }
+            override fun getColumnName(col: Int): String = headers[col]
+            override fun isCellEditable(row: Int, col: Int): Boolean = false
+        }
+        
+        table.model = model
+        adjustColumnWidths(table)
+    }
+    
+    /**
+     * 检查订单是否在发货计划表中
+     */
+    private fun isOrderInShippingPlan(order: ProductionOrder, shippingPlanTable: TableData): Boolean {
+        return shippingPlanTable.rows.any { row ->
+            val companyModel = getValueByHeader(row, shippingPlanTable.headers, "公司型号")
+            val customerModel = getValueByHeader(row, shippingPlanTable.headers, "客户型号")
+            
+            (companyModel != null && companyModel == order.companyModel) ||
+            (customerModel != null && customerModel == order.customerModel)
+        }
+    }
+    
+    /**
+     * 根据列名获取值
+     */
+    private fun getValueByHeader(row: List<String>, headers: List<String>, headerName: String): String? {
+        val columnIndex = headers.indexOf(headerName)
+        return if (columnIndex >= 0 && columnIndex < row.size) {
+            row[columnIndex].takeIf { it.isNotBlank() }
+        } else null
+    }
+    
+    /**
+     * 更新排产计划表预览
+     */
+    fun updateSchedulingPlanPreview(table: JTable, schedulingPlanTable: TableData?) {
+        if (schedulingPlanTable == null) {
+            table.model = javax.swing.table.DefaultTableModel()
+            return
+        }
+        
+        val model = object : javax.swing.table.DefaultTableModel() {
+            override fun getColumnCount(): Int = schedulingPlanTable.columnCount
+            override fun getRowCount(): Int = schedulingPlanTable.rowCount
+            override fun getValueAt(row: Int, col: Int): Any {
+                val cellValue = schedulingPlanTable.getValue(row, col)
+                val formula = schedulingPlanTable.getFormula(row, col)
+                
+                return if (formula != null && formula.isNotBlank()) {
+                    calculateFormula(formula, schedulingPlanTable, row, col)
+                } else {
+                    cellValue
+                }
+            }
+            override fun getColumnName(col: Int): String = schedulingPlanTable.headers[col]
             override fun isCellEditable(row: Int, col: Int): Boolean = false
         }
         
@@ -158,8 +251,8 @@ class EnhancedPreviewManager {
         }
         
         val headers = listOf(
-            "序号", "公司型号", "机台", "模具", "计划开始时间", "计划完成时间", 
-            "生产天数", "优先级", "状态", "机台利用率", "按时交付率"
+            "序号", "公司型号", "客户型号", "客户名称", "机台", "模具", "计划开始时间", "计划完成时间", 
+            "管子数", "段数", "总段数", "日产量", "生产天数", "优先级", "状态", "组合信息"
         )
         
         val model = object : javax.swing.table.DefaultTableModel() {
@@ -167,18 +260,25 @@ class EnhancedPreviewManager {
             override fun getRowCount(): Int = schedulingResult.orders.size
             override fun getValueAt(row: Int, col: Int): Any {
                 val order = schedulingResult.orders[row]
+                val totalSegments = order.quantity * order.segments
+                
                 return when (col) {
                     0 -> order.id
                     1 -> order.companyModel
-                    2 -> order.machine
-                    3 -> getMoldForOrder(order, schedulingResult.machineSchedule)
-                    4 -> order.startDate?.toString() ?: ""
-                    5 -> order.endDate?.toString() ?: ""
-                    6 -> order.calculateProductionDays().toString()
-                    7 -> order.priority.name
-                    8 -> order.status.name
-                    9 -> "${String.format("%.1f", schedulingResult.utilizationRate * 100)}%"
-                    10 -> "${String.format("%.1f", schedulingResult.onTimeDeliveryRate * 100)}%"
+                    2 -> order.customerModel
+                    3 -> order.customerName
+                    4 -> order.machine
+                    5 -> getMoldForOrder(order, schedulingResult.machineSchedule)
+                    6 -> order.startDate?.toString() ?: ""
+                    7 -> order.endDate?.toString() ?: ""
+                    8 -> order.quantity.toString()
+                    9 -> order.segments.toString()
+                    10 -> totalSegments.toString()
+                    11 -> order.dailyProduction.toString()
+                    12 -> String.format("%.1f", order.productionDays)
+                    13 -> order.priority.name
+                    14 -> order.status.name
+                    15 -> if (order.notes.contains("组合订单")) order.notes else ""
                     else -> ""
                 }
             }

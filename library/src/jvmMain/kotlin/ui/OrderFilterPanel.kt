@@ -144,11 +144,13 @@ class OrderFilterPanel(
         val previewButton = JButton("预览筛选结果")
         val applyButton = JButton("应用筛选")
         val resetButton = JButton("重置")
+        val removeButton = JButton("移除选中订单")
         val exportButton = JButton("导出筛选结果")
         
         buttonPanel.add(previewButton)
         buttonPanel.add(applyButton)
         buttonPanel.add(resetButton)
+        buttonPanel.add(removeButton)
         buttonPanel.add(exportButton)
         
         // 绑定按钮事件
@@ -162,6 +164,10 @@ class OrderFilterPanel(
         
         resetButton.addActionListener {
             handleResetFilter(panel)
+        }
+        
+        removeButton.addActionListener {
+            handleRemoveOrders(panel)
         }
         
         exportButton.addActionListener {
@@ -214,7 +220,8 @@ class OrderFilterPanel(
         try {
             // 获取未完成订单
             filteredOrders.clear()
-            filteredOrders.addAll(orderFilter.filterIncompleteOrders(currentTable))
+            val incompleteOrders = orderFilter.filterIncompleteOrders(currentTable)
+            filteredOrders.addAll(incompleteOrders)
             
             // 将筛选结果存储到UIManager中
             uiManager.filteredOrders = filteredOrders
@@ -223,7 +230,7 @@ class OrderFilterPanel(
             uiManager.updatePreview()
             
             JOptionPane.showMessageDialog(panel, 
-                "筛选完成！\n筛选出 ${filteredOrders.size} 个未完成订单", 
+                "筛选完成！\n筛选出 ${filteredOrders.size} 个未完成订单\n\n请查看右侧预览区域的'筛选结果'标签页", 
                 "筛选完成", JOptionPane.INFORMATION_MESSAGE)
         } catch (e: Exception) {
             JOptionPane.showMessageDialog(panel, "筛选失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
@@ -234,6 +241,48 @@ class OrderFilterPanel(
         filteredOrders.clear()
         uiManager.updatePreview()
         JOptionPane.showMessageDialog(panel, "筛选条件已重置", "重置完成", JOptionPane.INFORMATION_MESSAGE)
+    }
+    
+    private fun handleRemoveOrders(panel: JPanel) {
+        if (filteredOrders.isEmpty()) {
+            JOptionPane.showMessageDialog(panel, "没有可移除的订单", "提示", JOptionPane.WARNING_MESSAGE)
+            return
+        }
+        
+        val result = JOptionPane.showConfirmDialog(
+            panel, 
+            "确定要移除筛选出的 ${filteredOrders.size} 个订单吗？", 
+            "确认移除", 
+            JOptionPane.YES_NO_OPTION
+        )
+        
+        if (result == JOptionPane.YES_OPTION) {
+            try {
+                val currentTable = getCurrentTable()
+                if (currentTable != null) {
+                    val smartMerger = SmartTableMerger()
+                    val orderIdsToRemove = filteredOrders.map { it.id }
+                    
+                    // 移除订单
+                    val removalResult = smartMerger.removeRowsByOrderIds(currentTable, orderIdsToRemove)
+                    
+                    // 更新UI
+                    uiManager.smartMergeResult = MergeResult(
+                        originalTable = currentTable,
+                        updatedTable = removalResult.filteredTable,
+                        changes = emptyList()
+                    )
+                    uiManager.updatePreview()
+                    
+                    JOptionPane.showMessageDialog(panel, 
+                        "已移除 ${removalResult.removedCount} 个订单", 
+                        "移除完成", 
+                        JOptionPane.INFORMATION_MESSAGE)
+                }
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(panel, "移除失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
+            }
+        }
     }
     
     private fun handleExportFilter(panel: JPanel) {

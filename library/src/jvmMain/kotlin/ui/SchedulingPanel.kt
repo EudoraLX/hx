@@ -15,6 +15,12 @@ class SchedulingPanel(
     private val previewPanel: JPanel
 ) {
     
+    // 策略选择按钮
+    private lateinit var capacityFirstRadio: JRadioButton
+    private lateinit var timeFirstRadio: JRadioButton
+    private lateinit var orderFirstRadio: JRadioButton
+    private lateinit var balancedRadio: JRadioButton
+    
     fun createPanel(): JPanel {
         val panel = JPanel()
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
@@ -50,7 +56,7 @@ class SchedulingPanel(
         val strategyButtonGroup = ButtonGroup()
         val capacityFirstRadio = JRadioButton("产能优先", true)
         val timeFirstRadio = JRadioButton("时间优先")
-        val orderFirstRadio = JRadioButton("订单优先")
+        val orderFirstRadio = JRadioButton("订单优先(仅发货计划)")
         val balancedRadio = JRadioButton("平衡策略")
         
         strategyButtonGroup.add(capacityFirstRadio)
@@ -62,6 +68,12 @@ class SchedulingPanel(
         strategyGroup.add(timeFirstRadio)
         strategyGroup.add(orderFirstRadio)
         strategyGroup.add(balancedRadio)
+        
+        // 存储策略选择按钮的引用，以便在排产时获取选择的策略
+        this.capacityFirstRadio = capacityFirstRadio
+        this.timeFirstRadio = timeFirstRadio
+        this.orderFirstRadio = orderFirstRadio
+        this.balancedRadio = balancedRadio
         
         return strategyGroup
     }
@@ -161,58 +173,137 @@ class SchedulingPanel(
     private fun handleConvertOrders(panel: JPanel) {
         val currentTable = getCurrentTable()
         if (currentTable == null) {
-            JOptionPane.showMessageDialog(panel, "请先导入并合并表格", "提示", JOptionPane.WARNING_MESSAGE)
+            JOptionPane.showMessageDialog(panel, "请先导入表格", "提示", JOptionPane.WARNING_MESSAGE)
             return
         }
         
         try {
-            val converter = OrderConverter()
-            uiManager.productionOrders.clear()
-            uiManager.productionOrders.addAll(converter.convertToProductionOrders(currentTable))
+            // 获取选择的排产策略
+            val selectedStrategy = when {
+                capacityFirstRadio.isSelected -> SchedulingStrategy.CAPACITY_FIRST
+                timeFirstRadio.isSelected -> SchedulingStrategy.TIME_FIRST
+                orderFirstRadio.isSelected -> SchedulingStrategy.ORDER_FIRST
+                balancedRadio.isSelected -> SchedulingStrategy.BALANCED
+                else -> SchedulingStrategy.ORDER_FIRST
+            }
             
-            JOptionPane.showMessageDialog(panel, 
-                "订单转换完成！\n转换订单数: ${uiManager.productionOrders.size}", 
-                "转换完成", JOptionPane.INFORMATION_MESSAGE)
+            // 检查表格是否包含发货计划信息
+            val hasShippingPlan = checkIfHasShippingPlan(currentTable)
+            
+            val tableToConvert = if (hasShippingPlan) {
+                // 如果表格包含发货计划信息，直接使用
+                currentTable
+            } else {
+                // 如果没有发货计划信息，尝试合并发货计划表
+                if (uiManager.shippingPlanTable != null) {
+                    val flowManager = SchedulingFlowManager()
+                    val mergedResult = flowManager.mergeTablesByCompanyModel(currentTable, uiManager.shippingPlanTable!!)
+                    mergedResult
+                } else {
+                    currentTable
+                }
+            }
+            
+            val converter = OrderConverter()
+            val allOrders = converter.convertToProductionOrders(tableToConvert)
+            
+            // 根据排产策略决定是否只保留发货计划表中的订单
+            val ordersToConvert = if (selectedStrategy == SchedulingStrategy.ORDER_FIRST) {
+                // 订单优先策略：只保留发货计划表中的订单
+                val flowManager = SchedulingFlowManager()
+                val prioritizedOrders = flowManager.adjustPriorityFromTable(allOrders, tableToConvert)
+                prioritizedOrders.filter { it.priority == OrderPriority.URGENT }
+            } else {
+                // 其他策略：保留所有订单
+                allOrders
+            }
+            
+            uiManager.productionOrders.clear()
+            uiManager.productionOrders.addAll(ordersToConvert)
+            
+            // 立即更新预览显示转换结果
+            uiManager.updatePreview()
+            
+            val message = when {
+                selectedStrategy == SchedulingStrategy.ORDER_FIRST && ordersToConvert.isEmpty() -> 
+                    "订单转换完成！\n没有找到发货计划表中的订单\n请检查表格是否包含发货计划信息"
+                selectedStrategy == SchedulingStrategy.ORDER_FIRST -> 
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n仅保留发货计划表中的订单\n请查看右侧预览区域的'筛选结果'标签页"
+                hasShippingPlan -> 
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n表格包含发货计划信息，已自动合并\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+                uiManager.shippingPlanTable != null -> 
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已合并发货计划表\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+                else -> 
+                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n请查看右侧预览区域的'筛选结果'标签页，其中显示所有已转换订单"
+            }
+            
+            JOptionPane.showMessageDialog(panel, message, "转换完成", JOptionPane.INFORMATION_MESSAGE)
         } catch (e: Exception) {
             JOptionPane.showMessageDialog(panel, "转换失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
         }
     }
     
     private fun handleGenerateSchedule(panel: JPanel) {
-        if (uiManager.productionOrders.isEmpty()) {
-            JOptionPane.showMessageDialog(panel, "请先转换订单数据", "提示", JOptionPane.WARNING_MESSAGE)
+        // 检查是否有导入的表格
+        val currentTable = getCurrentTable()
+        if (currentTable == null) {
+            JOptionPane.showMessageDialog(panel, "请先在文件管理处导入表格", "提示", JOptionPane.WARNING_MESSAGE)
             return
         }
         
         try {
-            // 简化处理，使用平衡策略
-            val strategy = SchedulingStrategy.BALANCED
-            val constraints = SchedulingConstraints(
-                workDaysPerMonth = 22,
-                shiftHours = 8,
-                bufferDays = 2,
-                respectDeadline = true,
-                considerCapacity = true,
-                avoidOvertime = false,
-                balanceLoad = true
-            )
+            // 获取选择的排产策略
+            val selectedStrategy = when {
+                capacityFirstRadio.isSelected -> SchedulingStrategy.CAPACITY_FIRST
+                timeFirstRadio.isSelected -> SchedulingStrategy.TIME_FIRST
+                orderFirstRadio.isSelected -> SchedulingStrategy.ORDER_FIRST
+                balancedRadio.isSelected -> SchedulingStrategy.BALANCED
+                else -> SchedulingStrategy.ORDER_FIRST
+            }
             
-            val converter = OrderConverter()
-            val machines = converter.createDefaultMachines()
+            // 直接使用导入的表格进行排产
+            val flowManager = SchedulingFlowManager()
+            val machineRules = uiManager.getMachineRules()
             
-            val scheduler = SmartScheduler()
-            uiManager.schedulingResult = scheduler.schedule(uiManager.productionOrders, strategy, constraints, machines)
+            // 检查表格是否包含发货计划信息（通过备注或其他字段判断）
+            val hasShippingPlan = checkIfHasShippingPlan(currentTable)
+            
+            val flowResult = if (hasShippingPlan) {
+                // 如果表格包含发货计划信息，直接排产
+                flowManager.executeSchedulingFlowWithSingleTable(currentTable, machineRules, selectedStrategy)
+            } else {
+                // 如果没有发货计划信息，使用默认排产
+                flowManager.executeSchedulingFlowWithSingleTable(currentTable, machineRules, selectedStrategy)
+            }
+            
+            // 保存排产流程结果
+            uiManager.schedulingFlowResult = flowResult
+            uiManager.schedulingResult = flowResult.schedulingResult
             
             // 更新预览显示排产结果
             uiManager.updatePreview()
             
-            val stats = scheduler.generateStatistics(uiManager.schedulingResult!!.orders)
+            val stats = flowResult.schedulingResult.orders.size
+            val strategyMessage = when (selectedStrategy) {
+                SchedulingStrategy.ORDER_FIRST -> "\n注意：订单优先策略只处理发货计划表中的订单"
+                else -> ""
+            }
+            
             JOptionPane.showMessageDialog(panel, 
-                "排产完成！\n总订单数: ${stats.totalOrders}\n机台利用率: ${String.format("%.1f", uiManager.schedulingResult!!.utilizationRate * 100)}%\n按时交付率: ${String.format("%.1f", uiManager.schedulingResult!!.onTimeDeliveryRate * 100)}%", 
+                "排产完成！\n总订单数: $stats\n机台利用率: ${String.format("%.1f", flowResult.schedulingResult.utilizationRate * 100)}%\n按时交付率: ${String.format("%.1f", flowResult.schedulingResult.onTimeDeliveryRate * 100)}%$strategyMessage\n\n请查看右侧预览区域的'排产计划表'标签页查看结果", 
                 "排产完成", JOptionPane.INFORMATION_MESSAGE)
         } catch (e: Exception) {
             JOptionPane.showMessageDialog(panel, "排产失败: ${e.message}", "错误", JOptionPane.ERROR_MESSAGE)
         }
+    }
+    
+    /**
+     * 检查表格是否包含发货计划信息
+     */
+    private fun checkIfHasShippingPlan(table: TableData): Boolean {
+        // 检查是否有发货计划相关的列
+        val shippingPlanColumns = listOf("客户合同号", "合同号", "签订客户", "客户名称", "客户型号", "业务员", "交货时间")
+        return shippingPlanColumns.any { column -> table.headers.contains(column) }
     }
     
     private fun handleExportSchedule(panel: JPanel) {

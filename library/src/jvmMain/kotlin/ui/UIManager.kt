@@ -19,7 +19,9 @@ class UIManager {
     var orderRemovalResult: OrderRemovalResult? = null
     var schedulingResult: SchedulingResult? = null
     var productionOrders = mutableListOf<ProductionOrder>()
+    var shippingPlanTable: TableData? = null
     var filteredOrders = mutableListOf<ProductionOrder>()
+    var schedulingFlowResult: SchedulingFlowResult? = null
     
     // 数据源管理
     private var dataSourceManager = DataSourceManager()
@@ -99,7 +101,6 @@ class UIManager {
         tabbedPane.addTab("机台配置", MachineConfigPanel(this, previewPanel).createPanel())
         
         // 标签页4: 订单移除
-        tabbedPane.addTab("订单移除", OrderRemovalPanel(this, previewPanel).createPanel())
         
         // 标签页5: 智能排产
         tabbedPane.addTab("智能排产", SchedulingPanel(this, previewPanel).createPanel())
@@ -133,6 +134,10 @@ class UIManager {
         val filteredDataPanel = createDataPreviewPanel("筛选结果", null)
         tabbedPane.addTab("筛选结果", filteredDataPanel)
         
+        // 优先级调整标签页
+        val priorityPreviewPanel = createPriorityPreviewPanel()
+        tabbedPane.addTab("优先级调整", priorityPreviewPanel)
+        
         // 机台配置标签页
         val machineConfigPanel = createMachineConfigPreviewPanel()
         tabbedPane.addTab("机台配置", machineConfigPanel)
@@ -140,6 +145,10 @@ class UIManager {
         // 排产结果标签页
         val schedulingResultPanel = createSchedulingResultPreviewPanel()
         tabbedPane.addTab("排产结果", schedulingResultPanel)
+        
+        // 排产计划表标签页
+        val schedulingPlanPanel = createSchedulingPlanPreviewPanel()
+        tabbedPane.addTab("排产计划表", schedulingPlanPanel)
         
         panel.add(tabbedPane, BorderLayout.CENTER)
         
@@ -201,6 +210,47 @@ class UIManager {
     }
     
     /**
+     * 创建优先级调整预览面板
+     */
+    private fun createPriorityPreviewPanel(): JPanel {
+        val panel = JPanel()
+        panel.layout = BorderLayout()
+        
+        // 优先级调整信息标签
+        val infoLabel = JLabel("优先级调整 - 根据发货计划表调整订单优先级")
+        infoLabel.font = Font("微软雅黑", Font.PLAIN, 12)
+        infoLabel.horizontalAlignment = SwingConstants.CENTER
+        panel.add(infoLabel, BorderLayout.NORTH)
+        
+        // 优先级调整表格
+        val table = JTable()
+        val scrollPane = JScrollPane(table)
+        table.autoResizeMode = JTable.AUTO_RESIZE_OFF
+        
+        // 设置优先级调整表格模型
+        val model = object : javax.swing.table.DefaultTableModel() {
+            override fun getColumnCount(): Int = 6
+            override fun getRowCount(): Int = 0
+            override fun getValueAt(row: Int, col: Int): Any = ""
+            override fun getColumnName(col: Int): String = when (col) {
+                0 -> "序号"
+                1 -> "公司型号"
+                2 -> "客户型号"
+                3 -> "原优先级"
+                4 -> "调整后优先级"
+                5 -> "调整原因"
+                else -> ""
+            }
+            override fun isCellEditable(row: Int, col: Int): Boolean = false
+        }
+        
+        table.model = model
+        panel.add(scrollPane, BorderLayout.CENTER)
+        
+        return panel
+    }
+    
+    /**
      * 创建机台配置预览面板
      */
     private fun createMachineConfigPreviewPanel(): JPanel {
@@ -234,6 +284,29 @@ class UIManager {
             override fun isCellEditable(row: Int, col: Int): Boolean = false
         }
         table.model = model
+        
+        panel.add(scrollPane, BorderLayout.CENTER)
+        
+        return panel
+    }
+    
+    /**
+     * 创建排产计划表预览面板
+     */
+    private fun createSchedulingPlanPreviewPanel(): JPanel {
+        val panel = JPanel()
+        panel.layout = BorderLayout()
+        
+        // 排产计划表信息标签
+        val infoLabel = JLabel("排产计划表 - 原输出表基础上添加时间、产能字段")
+        infoLabel.font = Font("微软雅黑", Font.PLAIN, 12)
+        infoLabel.horizontalAlignment = SwingConstants.CENTER
+        panel.add(infoLabel, BorderLayout.NORTH)
+        
+        // 排产计划表
+        val table = JTable()
+        val scrollPane = JScrollPane(table)
+        table.autoResizeMode = JTable.AUTO_RESIZE_OFF
         
         panel.add(scrollPane, BorderLayout.CENTER)
         
@@ -275,8 +348,10 @@ class UIManager {
         // 更新各个标签页
         updateOriginalDataTab()
         updateFilteredDataTab()
+        updatePriorityTab()
         updateMachineConfigTab()
         updateSchedulingResultTab()
+        updateSchedulingPlanTab()
     }
     
     /**
@@ -284,6 +359,13 @@ class UIManager {
      */
     fun refreshMachineConfigPreview() {
         updateMachineConfigTab()
+    }
+    
+    /**
+     * 获取机台规则
+     */
+    fun getMachineRules(): List<MachineRule> {
+        return enhancedPreviewManager.machineRules
     }
     
     /**
@@ -306,12 +388,15 @@ class UIManager {
         val filteredDataPanel = previewTabbedPane.getComponentAt(1) as? JPanel ?: return
         val table = findTableInPanel(filteredDataPanel) ?: return
         
-        // 显示筛选后的订单
+        // 显示筛选后的订单，如果没有筛选结果则显示所有已转换的订单
         val ordersToShow = if (filteredOrders.isNotEmpty()) {
             filteredOrders
         } else if (orderRemovalResult != null) {
             val converter = OrderConverter()
             converter.convertToProductionOrders(orderRemovalResult!!.filteredTable)
+        } else if (productionOrders.isNotEmpty()) {
+            // 如果没有筛选结果，显示所有已转换的订单
+            productionOrders
         } else {
             emptyList()
         }
@@ -320,11 +405,31 @@ class UIManager {
     }
     
     /**
+     * 更新优先级调整标签页
+     */
+    private fun updatePriorityTab() {
+        val previewTabbedPane = this.previewTabbedPane ?: return
+        val priorityPanel = previewTabbedPane.getComponentAt(2) as? JPanel ?: return
+        val table = findTableInPanel(priorityPanel) ?: return
+        
+        // 使用筛选后的订单，如果没有则使用所有订单
+        val ordersToShow = if (filteredOrders.isNotEmpty()) {
+            filteredOrders
+        } else if (productionOrders.isNotEmpty()) {
+            productionOrders
+                    } else {
+            emptyList()
+        }
+        
+        enhancedPreviewManager.updatePriorityPreview(table, ordersToShow, shippingPlanTable)
+    }
+    
+    /**
      * 更新机台配置标签页
      */
     private fun updateMachineConfigTab() {
         val previewTabbedPane = this.previewTabbedPane ?: return
-        val machineConfigPanel = previewTabbedPane.getComponentAt(2) as? JPanel ?: return
+        val machineConfigPanel = previewTabbedPane.getComponentAt(3) as? JPanel ?: return
         val table = findTableInPanel(machineConfigPanel) ?: return
         
         enhancedPreviewManager.updateMachineConfigPreview(table)
@@ -335,10 +440,21 @@ class UIManager {
      */
     private fun updateSchedulingResultTab() {
         val previewTabbedPane = this.previewTabbedPane ?: return
-        val schedulingResultPanel = previewTabbedPane.getComponentAt(3) as? JPanel ?: return
+        val schedulingResultPanel = previewTabbedPane.getComponentAt(4) as? JPanel ?: return
         val table = findTableInPanel(schedulingResultPanel) ?: return
         
         enhancedPreviewManager.updateSchedulingResultPreview(table, schedulingResult)
+    }
+    
+    /**
+     * 更新排产计划表标签页
+     */
+    private fun updateSchedulingPlanTab() {
+        val previewTabbedPane = this.previewTabbedPane ?: return
+        val schedulingPlanPanel = previewTabbedPane.getComponentAt(5) as? JPanel ?: return
+        val table = findTableInPanel(schedulingPlanPanel) ?: return
+        
+        enhancedPreviewManager.updateSchedulingPlanPreview(table, schedulingFlowResult?.schedulingPlanTable)
     }
     
     /**

@@ -21,9 +21,12 @@ class MachineConfigPanel(
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
         panel.border = BorderFactory.createTitledBorder("机台配置")
         
-        // 机台规则列表
-        val rulesPanel = createRulesPanel()
-        panel.add(rulesPanel)
+        // 说明文字
+        val infoLabel = JLabel("<html><div style='text-align: center; padding: 10px;'>" +
+                "机台配置管理<br/>" +
+                "配置完成后可在右侧预览区域查看详细信息</div></html>")
+        infoLabel.horizontalAlignment = SwingConstants.CENTER
+        panel.add(infoLabel)
         panel.add(Box.createVerticalStrut(10))
         
         // 操作按钮
@@ -36,47 +39,10 @@ class MachineConfigPanel(
         return panel
     }
     
-    private fun createRulesPanel(): JPanel {
-        val panel = JPanel()
-        panel.layout = BorderLayout()
-        panel.border = BorderFactory.createTitledBorder("机台划分规则")
-        
-        // 创建表格显示机台规则
-        val tableModel = object : javax.swing.table.DefaultTableModel() {
-            override fun getColumnCount(): Int = 5
-            override fun getRowCount(): Int = machineRules.size
-            override fun getValueAt(row: Int, col: Int): Any {
-                val rule = machineRules[row]
-                return when (col) {
-                    0 -> rule.machineId
-                    1 -> rule.moldId
-                    2 -> rule.pipeSpecs.joinToString(", ") { "${it.innerDiameter}/${it.outerDiameter}" }
-                    3 -> rule.description
-                    4 -> "${rule.changeoverTime}h/${rule.pipeChangeTime}h"
-                    else -> ""
-                }
-            }
-            override fun getColumnName(col: Int): String = when (col) {
-                0 -> "机台"
-                1 -> "模具"
-                2 -> "管规格"
-                3 -> "说明"
-                4 -> "换模/换管时间"
-                else -> ""
-            }
-            override fun isCellEditable(row: Int, col: Int): Boolean = false
-        }
-        
-        val table = JTable(tableModel)
-        val scrollPane = JScrollPane(table)
-        panel.add(scrollPane, BorderLayout.CENTER)
-        
-        return panel
-    }
     
     private fun createButtonPanel(panel: JPanel): JPanel {
         val buttonPanel = JPanel()
-        buttonPanel.layout = FlowLayout()
+        buttonPanel.layout = GridLayout(2, 3, 5, 5) // 2行3列，间距5px
         
         val loadDefaultButton = JButton("加载默认规则")
         val addRuleButton = JButton("添加规则")
@@ -85,12 +51,13 @@ class MachineConfigPanel(
         val exportRulesButton = JButton("导出规则")
         val importRulesButton = JButton("导入规则")
         
-        buttonPanel.add(loadDefaultButton)
-        buttonPanel.add(addRuleButton)
-        buttonPanel.add(editRuleButton)
-        buttonPanel.add(deleteRuleButton)
-        buttonPanel.add(exportRulesButton)
-        buttonPanel.add(importRulesButton)
+        // 设置按钮样式
+        val buttons = listOf(loadDefaultButton, addRuleButton, editRuleButton, 
+                           deleteRuleButton, exportRulesButton, importRulesButton)
+        buttons.forEach { button ->
+            button.preferredSize = Dimension(120, 35)
+            buttonPanel.add(button)
+        }
         
         // 绑定按钮事件
         loadDefaultButton.addActionListener {
