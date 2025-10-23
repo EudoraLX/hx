@@ -23,6 +23,7 @@ class OrderConverter {
      */
     fun convertToProductionOrders(tableData: TableData): List<ProductionOrder> {
         val orders = mutableListOf<ProductionOrder>()
+        val errors = mutableListOf<String>()
         
         tableData.rows.forEachIndexed { rowIndex, row ->
             try {
@@ -30,10 +31,19 @@ class OrderConverter {
                 if (order != null) {
                     // 备注保持原样，不添加任何标记
                     orders.add(order)
+                } else {
+                    errors.add("第${rowIndex + 1}行：无法转换订单数据")
                 }
             } catch (e: Exception) {
-                // 跳过无法转换的行，记录错误但不中断处理
+                // 记录转换错误，但不中断处理
+                errors.add("第${rowIndex + 1}行：转换失败 - ${e.message}")
             }
+        }
+        
+        // 如果有错误，打印到控制台（用于调试）
+        if (errors.isNotEmpty()) {
+            println("数据转换警告：")
+            errors.forEach { println("  $it") }
         }
         
         return orders
@@ -64,8 +74,15 @@ class OrderConverter {
     private fun convertRowToOrder(row: List<String>, headers: List<String>, rowIndex: Int): ProductionOrder? {
         if (row.isEmpty()) return null
         
+        // 检查行数据完整性
+        if (row.size < headers.size) {
+            println("警告：第${rowIndex + 1}行数据不完整，行数据列数：${row.size}，表头列数：${headers.size}")
+        }
+        
         // 根据列名映射获取数据
-        val id = getValueByHeader(row, headers, "序号") ?: row[0].takeIf { it.isNotBlank() } ?: return null
+        val id = getValueByHeader(row, headers, "序号") ?: 
+                 row.getOrNull(0)?.takeIf { it.isNotBlank() } ?: 
+                 "ROW_${rowIndex + 1}" // 如果都没有，使用行号作为ID
         val companyModel = getValueByHeader(row, headers, "公司型号") ?: ""
         val customerModel = getValueByHeader(row, headers, "客户型号") ?: ""
         val customerName = getValueByHeader(row, headers, "客户名称") ?: ""
@@ -86,6 +103,7 @@ class OrderConverter {
         val pipeQuantity = getValueByHeader(row, headers, "管/棒数量")?.toIntOrNull() ?: 0
         val pipeArrivalDate = parseDate(getValueByHeader(row, headers, "采购回馈（-1管子时间）"))
         val injectionCompleted = getValueByHeader(row, headers, "注射完成")?.toIntOrNull()
+        val notes = getValueByHeader(row, headers, "备注") ?: "" // 获取备注字段
         
         // 确定订单状态
         val status = determineOrderStatus(plannedQuantity, shippedQuantity, unshippedQuantity)
@@ -118,7 +136,8 @@ class OrderConverter {
             injectionCompleted = injectionCompleted,
             isCompleted = isCompleted,
             priority = priority,
-            status = status
+            status = status,
+            notes = notes // 添加备注字段
         )
     }
     

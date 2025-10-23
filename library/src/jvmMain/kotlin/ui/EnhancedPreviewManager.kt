@@ -98,6 +98,7 @@ class EnhancedPreviewManager {
     
     /**
      * 更新筛选结果预览
+     * 保持原表顺序，不进行排序
      */
     fun updateFilteredDataPreview(table: JTable, orders: List<ProductionOrder>, excludedOrders: List<ProductionOrder> = emptyList()) {
         // 如果没有显式传入排除订单，根据排除条件识别排除的订单
@@ -119,7 +120,8 @@ class EnhancedPreviewManager {
             excludedOrders
         }
         
-        // 合并参与排产和不参与排产的订单
+        // 保持原表顺序：只显示传入的订单，不合并排除的订单
+        // 排除的订单会在绿色标注中显示
         val allOrders = orders
         
         if (allOrders.isEmpty()) {

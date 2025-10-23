@@ -322,19 +322,6 @@ class UIManager {
         val filteredDataPanel = previewTabbedPane.getComponentAt(1) as? JPanel ?: return
         val table = findTableInPanel(filteredDataPanel) ?: return
         
-        // 显示筛选后的订单，如果没有筛选结果则显示所有已转换的订单
-        val ordersToShow = if (filteredOrders.isNotEmpty()) {
-            filteredOrders
-        } else if (orderRemovalResult != null) {
-            val converter = OrderConverter()
-            converter.convertToProductionOrders(orderRemovalResult!!.filteredTable)
-        } else if (productionOrders.isNotEmpty()) {
-            // 如果没有筛选结果，显示所有已转换的订单
-            productionOrders
-                    } else {
-            emptyList()
-        }
-        
         // 获取不参与排产的订单（用于绿色标注）
         val excludedOrders = if (schedulingFlowResult != null) {
             schedulingFlowResult!!.excludedOrders
@@ -349,6 +336,21 @@ class UIManager {
             }
         }
         
+        // 显示筛选后的订单，如果没有筛选结果则显示所有已转换的订单
+        // 保持原表顺序，不进行排序
+        val ordersToShow = if (filteredOrders.isNotEmpty()) {
+            filteredOrders
+        } else if (orderRemovalResult != null) {
+            val converter = OrderConverter()
+            converter.convertToProductionOrders(orderRemovalResult!!.filteredTable)
+        } else if (productionOrders.isNotEmpty()) {
+            // 如果没有筛选结果，显示所有已转换的订单
+            productionOrders
+        } else {
+            emptyList()
+        }
+        
+        // 传递筛选后的订单和排除的订单，保持原表顺序
         enhancedPreviewManager.updateFilteredDataPreview(table, ordersToShow, excludedOrders)
     }
     

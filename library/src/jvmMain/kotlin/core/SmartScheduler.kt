@@ -32,17 +32,19 @@ class SmartScheduler {
     
     /**
      * 产能优先排产
-     * 以机台配置表为核心，尽可能少换模具和管子，最大化生产
+     * 以机台配置表为核心，管子数仅决定排产优先级，最大化生产
      * 新约束条件：
-     * 1. 所有非排除订单都参与排产
-     * 2. 排产数量 = 未发货数量 - 注塑完成
-     * 3. 优先相同模具和管子规格的订单组合生产
-     * 4. 最大化产能利用率
+     * 1. 所有参与排产的订单都进行排产
+     * 2. 排产数量 = 未发货数量 - 注射完成
+     * 3. 管子数仅决定排产优先级
+     * 4. 以机台配置分配为核心
+     * 5. 最大化产能利用率
      */
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
                                       constraints: SchedulingConstraints): SchedulingResult {
         // 按优先级排序：发货计划表优先 > 管子数量足够 > 紧急订单 > 其他
+        // 管子数充足的优先排产，管子数不足的后排产（但仍要排产）
         val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
             when {
                 it.priority == OrderPriority.URGENT -> 0  // 发货计划表订单
@@ -50,7 +52,7 @@ class SmartScheduler {
                 it.priority == OrderPriority.MEDIUM -> 2
                 else -> 3
             }
-        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先（管子数决定优先级）
         .thenBy { !it.isPipeArrived() } // 管子已到货的优先
         .thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
         
@@ -86,8 +88,20 @@ class SmartScheduler {
             // 根据管子情况调整排产数量
             val adjustedQuantity = adjustQuantityByPipeStatus(order)
             
+            // 确保所有参与排产的订单都进行排产
+            val productionQuantity = if (adjustedQuantity <= 0) {
+                // 如果调整后数量为0，但仍有未发货数，则排产1个
+                if (order.unshippedQuantity > 0) {
+                    1
+                } else {
+                    continue // 跳过真正不需要排产的订单
+                }
+            } else {
+                adjustedQuantity
+            }
+            
             // 计算总段数：(数量*段数)/日产量=生产天数
-            val totalSegments = adjustedQuantity * order.segments
+            val totalSegments = productionQuantity * order.segments
             val productionDays = if (order.dailyProduction > 0) {
                 totalSegments.toDouble() / order.dailyProduction
             } else {
@@ -244,21 +258,25 @@ class SmartScheduler {
     
     /**
      * 根据管子情况调整排产数量
-     * 排产数量 = 未发货数量 - 注塑完成
-     * 确保所有非排除订单都参与排产，最大化生产
+     * 管子数仅决定排产优先级，不影响排产数量
+     * 排产数量 = 未发货数量 - 注射完成
+     * 确保所有参与排产的订单都进行排产
      */
     private fun adjustQuantityByPipeStatus(order: ProductionOrder): Int {
         val unshippedQuantity = order.unshippedQuantity
         val injectionCompleted = order.injectionCompleted ?: 0
         
-        // 排产数量 = 未发货数量 - 注塑完成
+        // 排产数量 = 未发货数量 - 注射完成
         val productionQuantity = maxOf(0, unshippedQuantity - injectionCompleted)
         
-        // 确保至少排产1个（如果有未发货数量）
-        return if (unshippedQuantity > 0 && productionQuantity == 0) {
-            1 // 至少排产1个
-        } else {
+        // 确保所有参与排产的订单都进行排产
+        return if (productionQuantity > 0) {
             productionQuantity
+        } else if (unshippedQuantity > 0) {
+            // 如果注射完成 >= 未发货数，但仍有未发货数，则排产1个
+            1
+        } else {
+            0
         }
     }
     
@@ -350,6 +368,7 @@ class SmartScheduler {
         val otherOrders = orders.filter { it.priority != OrderPriority.URGENT }
         
         // 对优先订单按交付期、管子数量、数量排序
+        // 管子数充足的优先排产，管子数不足的后排产（但仍要排产）
         val sortedPriorityOrders = priorityOrders.sortedWith(compareBy<ProductionOrder> { 
             // 按交付期排序
             it.plannedDeliveryDate ?: LocalDate.MAX 
@@ -361,6 +380,7 @@ class SmartScheduler {
         })
         
         // 对其他订单按交付期排序
+        // 管子数充足的优先排产，管子数不足的后排产（但仍要排产）
         val sortedOtherOrders = otherOrders.sortedWith(compareBy<ProductionOrder> { 
             it.plannedDeliveryDate ?: LocalDate.MAX 
         }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
@@ -447,9 +467,9 @@ class SmartScheduler {
             val urgencyWeight = if (order.isUrgent()) 2.0 else 1.0
             val quantityWeight = order.quantity.toDouble() / (orders.maxOfOrNull { it.quantity }?.toDouble() ?: 1.0)
             
-            // 管子数量权重：管子数量足够的订单权重更高
-            val pipeWeight = if (order.hasEnoughPipeQuantity()) 2.0 else 0.5
-            val pipeArrivalWeight = if (order.isPipeArrived()) 1.5 else 0.8
+            // 管子数量权重：管子数量足够的订单权重更高，但管子数不足的仍要排产
+            val pipeWeight = if (order.hasEnoughPipeQuantity()) 2.0 else 1.0 // 管子数不足的权重降低但不为0
+            val pipeArrivalWeight = if (order.isPipeArrived()) 1.5 else 1.0 // 管子未到货的权重降低但不为0
             
             val totalWeight = priorityWeight * urgencyWeight * quantityWeight * pipeWeight * pipeArrivalWeight
             

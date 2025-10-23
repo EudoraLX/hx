@@ -44,6 +44,7 @@ class ExcelReader {
                     val rowData = mutableListOf<String>()
                     val rowFormulas = mutableListOf<String?>()
                     
+                    // 确保读取所有列，即使某些列可能为空
                     for (cellIndex in 0 until headers.size) {
                         val cell = row.getCell(cellIndex)
                         val cellValue = getCellValueAsString(cell)
@@ -59,6 +60,13 @@ class ExcelReader {
                     }
                     rows.add(rowData)
                     formulas.add(rowFormulas)
+                } else {
+                    // 如果行为空，创建空行数据以保持数据完整性
+                    val emptyRow = List(headers.size) { "" }
+                    val emptyFormulas = List(headers.size) { null }
+                    rows.add(emptyRow)
+                    formulas.add(emptyFormulas)
+                    println("警告：第${rowIndex + 1}行为空，已创建空行数据")
                 }
             }
             

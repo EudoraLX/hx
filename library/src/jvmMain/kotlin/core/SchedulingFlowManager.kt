@@ -197,41 +197,31 @@ class SchedulingFlowManager {
     /**
      * 步骤2：筛选需要排产的订单
      * 新约束条件：
-     * 1. 优先管子数量足够的
-     * 2. 筛选出备注"已完成"或"改制"的不参与排产（绿色标注）
-     * 3. 筛选出注塑完成大于未发货数的不参与排产（绿色标注）
-     * 4. 筛选外径为0的不参与排产（绿色标注）
-     * 5. 机台可连续生产，不受单次生产限制
+     * 1. 已完成的不需要排产
+     * 2. 管子数仅决定排产优先级
+     * 3. 备注包含"已完成"或"改制"的不参与排产（绿色标注）
+     * 4. 注射完成大于未发货数的不参与排产（绿色标注）
+     * 5. 外径为0的不参与排产（绿色标注）
+     * 6. 机台可连续生产，不受单次生产限制
+     * 7. 保持原表顺序，不进行排序
      */
-    private fun filterOrdersForScheduling(mergedTable: TableData): List<ProductionOrder> {
+    fun filterOrdersForScheduling(mergedTable: TableData): List<ProductionOrder> {
         val allOrders = orderConverter.convertToProductionOrders(mergedTable)
         
+        // 保持原表顺序，只筛选不排序
         return allOrders.filter { order ->
-            // 筛选条件：
+            // 基本筛选条件：只排除真正不需要排产的订单
             // 1. 未完成订单（计划发货数量 != 已发货数量）
             // 2. 管子情况不是"已完成"
             // 3. 未发数量 > 0
-            // 4. 备注不包含"已完成"或"改制"
-            // 5. 注塑完成不大于未发货数
-            // 6. 外径不为0
+            // 4. 外径不为0（技术约束）
             val isNotCompleted = order.plannedQuantity != order.shippedQuantity
             val pipeNotCompleted = order.pipeStatus != "已完成"
             val hasUnshippedQuantity = order.unshippedQuantity > 0
-            // 移除交付期约束：没有交付期的订单也需要排产
-            
-            // 检查备注是否包含"已完成"或"改制"
-            val notes = order.notes ?: ""
-            val isNotInNotes = !notes.contains("已完成") && !notes.contains("改制")
-            
-            // 检查注射完成是否大于未发货数
-            val injectionCompleted = order.injectionCompleted ?: 0
-            val isInjectionNotExceed = injectionCompleted <= order.unshippedQuantity
-            
-            // 检查外径是否为0
             val hasValidOuterDiameter = order.outerDiameter > 0
             
-            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && 
-            isNotInNotes && isInjectionNotExceed && hasValidOuterDiameter
+            // 只排除真正不需要排产的订单
+            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && hasValidOuterDiameter
         }
     }
     

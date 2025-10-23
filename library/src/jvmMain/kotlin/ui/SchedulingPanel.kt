@@ -207,15 +207,19 @@ class SchedulingPanel(
             val converter = OrderConverter()
             val allOrders = converter.convertToProductionOrders(tableToConvert)
             
+            // 获取筛选后的订单（参与排产的订单）
+            val flowManager = SchedulingFlowManager()
+            val filteredOrders = flowManager.filterOrdersForScheduling(tableToConvert)
+            val excludedOrders = flowManager.getExcludedOrders(tableToConvert)
+            
             // 根据排产策略决定是否只保留发货计划表中的订单
             val ordersToConvert = if (selectedStrategy == SchedulingStrategy.ORDER_FIRST) {
                 // 订单优先策略：只保留发货计划表中的订单
-                val flowManager = SchedulingFlowManager()
-                val prioritizedOrders = flowManager.adjustPriorityFromTable(allOrders, tableToConvert)
+                val prioritizedOrders = flowManager.adjustPriorityFromTable(filteredOrders, tableToConvert)
                 prioritizedOrders.filter { it.priority == OrderPriority.URGENT }
             } else {
-                // 其他策略：保留所有订单
-                allOrders
+                // 其他策略：使用筛选后的订单
+                filteredOrders
             }
             
             uiManager.productionOrders.clear()
@@ -227,17 +231,19 @@ class SchedulingPanel(
             // 自动切换到筛选结果标签页
             uiManager.previewTabbedPane?.selectedIndex = 1 // 筛选结果是第2个标签页（索引1）
             
-            val message = when {
-                selectedStrategy == SchedulingStrategy.ORDER_FIRST && ordersToConvert.isEmpty() -> 
-                    "订单转换完成！\n没有找到发货计划表中的订单\n请检查表格是否包含发货计划信息"
-                selectedStrategy == SchedulingStrategy.ORDER_FIRST -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n仅保留发货计划表中的订单\n已自动显示筛选结果"
-                hasShippingPlan -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n表格包含发货计划信息，已自动合并\n已自动显示筛选结果"
-                uiManager.shippingPlanTable != null -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已合并发货计划表\n已自动显示筛选结果"
-                else -> 
-                    "订单转换完成！\n转换订单数: ${ordersToConvert.size}\n已自动显示筛选结果"
+            val message = buildString {
+                appendLine("订单转换完成！")
+                appendLine("原始订单数: ${allOrders.size}")
+                appendLine("筛选后订单数: ${filteredOrders.size}")
+                appendLine("排除订单数: ${excludedOrders.size}")
+                appendLine("参与排产订单数: ${ordersToConvert.size}")
+                appendLine()
+                appendLine("排除原因：")
+                appendLine("- 已完成/改制: ${excludedOrders.count { it.notes?.contains("已完成") == true || it.notes?.contains("改制") == true }}")
+                appendLine("- 外径为0: ${excludedOrders.count { it.outerDiameter <= 0 }}")
+                appendLine("- 注射完成>未发货数: ${excludedOrders.count { (it.injectionCompleted ?: 0) > it.unshippedQuantity }}")
+                appendLine()
+                appendLine("已自动显示筛选结果")
             }
             
             JOptionPane.showMessageDialog(panel, message, "转换完成", JOptionPane.INFORMATION_MESSAGE)
