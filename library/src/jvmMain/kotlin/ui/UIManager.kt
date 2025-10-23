@@ -96,12 +96,9 @@ class UIManager {
         
         // 标签页2: 订单筛选
         
-        // 标签页3: 机台配置
-        tabbedPane.addTab("机台配置", MachineConfigPanel(this, previewPanel).createPanel())
+        // 标签页3: 订单移除
         
-        // 标签页4: 订单移除
-        
-        // 标签页5: 智能排产
+        // 标签页4: 智能排产
         tabbedPane.addTab("智能排产", SchedulingPanel(this, previewPanel).createPanel())
         
         panel.add(tabbedPane, BorderLayout.CENTER)
@@ -226,22 +223,8 @@ class UIManager {
         val scrollPane = JScrollPane(table)
         table.autoResizeMode = JTable.AUTO_RESIZE_OFF
         
-        // 设置机台配置表格模型
-        val model = object : javax.swing.table.DefaultTableModel() {
-            override fun getColumnCount(): Int = 5
-            override fun getRowCount(): Int = 0
-            override fun getValueAt(row: Int, col: Int): Any = ""
-            override fun getColumnName(col: Int): String = when (col) {
-                0 -> "机台"
-                1 -> "模具"
-                2 -> "管规格"
-                3 -> "说明"
-                4 -> "换模/换管时间"
-                else -> ""
-            }
-            override fun isCellEditable(row: Int, col: Int): Boolean = false
-        }
-        table.model = model
+        // 立即显示默认机台配置
+        enhancedPreviewManager.updateMachineConfigPreview(table)
         
         panel.add(scrollPane, BorderLayout.CENTER)
         
@@ -313,13 +296,6 @@ class UIManager {
     }
     
     /**
-     * 强制刷新机台配置预览
-     */
-    fun refreshMachineConfigPreview() {
-        updateMachineConfigTab()
-    }
-    
-    /**
      * 获取机台规则
      */
     fun getMachineRules(): List<MachineRule> {
@@ -370,6 +346,7 @@ class UIManager {
         val machineConfigPanel = previewTabbedPane.getComponentAt(2) as? JPanel ?: return
         val table = findTableInPanel(machineConfigPanel) ?: return
         
+        // 确保机台配置预览始终显示默认配置
         enhancedPreviewManager.updateMachineConfigPreview(table)
     }
     

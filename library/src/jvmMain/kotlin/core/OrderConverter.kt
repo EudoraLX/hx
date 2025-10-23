@@ -65,6 +65,7 @@ class OrderConverter {
         val pipeStatus = getValueByHeader(row, headers, "管子情况") ?: ""
         val pipeQuantity = getValueByHeader(row, headers, "管/棒数量")?.toIntOrNull() ?: 0
         val pipeArrivalDate = parseDate(getValueByHeader(row, headers, "采购回馈（-1管子时间）"))
+        val injectionCompleted = getValueByHeader(row, headers, "注塑完成")?.toIntOrNull()
         
         // 确定订单状态
         val status = determineOrderStatus(plannedQuantity, shippedQuantity, unshippedQuantity)
@@ -94,6 +95,7 @@ class OrderConverter {
             pipeStatus = pipeStatus,
             pipeQuantity = pipeQuantity,
             pipeArrivalDate = pipeArrivalDate,
+            injectionCompleted = injectionCompleted,
             isCompleted = isCompleted,
             priority = priority,
             status = status
@@ -194,6 +196,7 @@ class OrderConverter {
                     "未发数量" -> order.unshippedQuantity.toString()
                     "机台" -> order.machine
                     "管子情况" -> order.pipeStatus
+                    "注塑完成" -> order.injectionCompleted?.toString() ?: ""
                     "计划开始时间" -> order.startDate?.toString() ?: ""
                     "计划完成时间" -> order.endDate?.toString() ?: ""
                     "优先级" -> order.priority.name

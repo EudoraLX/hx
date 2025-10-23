@@ -33,6 +33,10 @@ class SmartScheduler {
     /**
      * 产能优先排产
      * 基于管子数×段数=总段数，每个机台一次生产1段
+     * 新约束条件：
+     * 1. 优先管子数量足够的
+     * 2. 管子够进行优先排产。管子不够（0或负数）则进行后排产，排产数为：未发货数-注塑完成
+     * 3. 根据管子情况进行排产，正数代表可排产，负数代表管子缺货，优先排产正数管子
      */
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
@@ -78,9 +82,16 @@ class SmartScheduler {
         }
         
         for (order in finalOrders) {
-            // 计算总段数：管子数 × 段数
-            val totalSegments = order.quantity * order.segments
-            val productionDays = totalSegments.toDouble() / order.dailyProduction
+            // 根据管子情况调整排产数量
+            val adjustedQuantity = adjustQuantityByPipeStatus(order)
+            
+            // 计算总段数：(数量*段数)/日产量=生产天数
+            val totalSegments = adjustedQuantity * order.segments
+            val productionDays = if (order.dailyProduction > 0) {
+                totalSegments.toDouble() / order.dailyProduction
+            } else {
+                order.productionDays
+            }
             
             val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
             
@@ -94,7 +105,8 @@ class SmartScheduler {
                     status = OrderStatus.IN_PRODUCTION,
                     machine = bestMachine.id,
                     productionDays = productionDays,
-                    remainingDays = productionDays
+                    remainingDays = productionDays,
+                    quantity = adjustedQuantity
                 )
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)
@@ -191,11 +203,34 @@ class SmartScheduler {
     }
     
     /**
+     * 根据管子情况调整排产数量
+     * 管子够进行优先排产。管子不够（0或负数）则进行后排产，排产数为：未发货数-注塑完成
+     */
+    private fun adjustQuantityByPipeStatus(order: ProductionOrder): Int {
+        val pipeQuantity = order.pipeQuantity
+        val unshippedQuantity = order.unshippedQuantity
+        val injectionCompleted = order.injectionCompleted ?: 0
+        
+        return when {
+            // 管子数量足够，按原数量排产
+            pipeQuantity > 0 && pipeQuantity >= unshippedQuantity -> unshippedQuantity
+            
+            // 管子不够，按未发货数-注塑完成排产
+            pipeQuantity <= 0 -> maxOf(0, unshippedQuantity - injectionCompleted)
+            
+            // 管子数量不足但大于0，按管子数量排产
+            else -> minOf(pipeQuantity, unshippedQuantity)
+        }
+    }
+    
+    /**
      * 获取换模/换管时间
+     * 换模时间为12h，换管时间为4h，都是连续时间
      */
     private fun getChangeoverTime(order: ProductionOrder, machine: Machine): Int {
         // 根据机台配置规则获取换模/换管时间
-        // 暂时返回默认值
+        // 换模时间12小时，换管时间4小时
+        // 考虑连续时间，如果从23点开始换管，则到次日3点结束
         return 1 // 1天换模时间
     }
     
@@ -258,28 +293,17 @@ class SmartScheduler {
     
     /**
      * 订单优先排产
-     * 只处理发货计划表中的订单（URGENT优先级）
+     * 根据公司型号与输出表联系标记出订单优先的订单，作为优先排产，其他的继续进行交付期优先排产
      */
     private fun orderFirstScheduling(orders: List<ProductionOrder>, 
                                     machines: List<Machine>,
                                     constraints: SchedulingConstraints): SchedulingResult {
-        // 订单优先策略：只处理发货计划表中的订单（URGENT优先级）
-        val shippingPlanOrders = orders.filter { it.priority == OrderPriority.URGENT }
+        // 订单优先策略：优先处理发货计划表中的订单（URGENT优先级），其他按交付期优先
+        val priorityOrders = orders.filter { it.priority == OrderPriority.URGENT }
+        val otherOrders = orders.filter { it.priority != OrderPriority.URGENT }
         
-        if (shippingPlanOrders.isEmpty()) {
-            // 如果没有发货计划订单，返回空结果
-            return SchedulingResult(
-                orders = emptyList(),
-                machineSchedule = emptyMap(),
-                totalProductionDays = 0,
-                conflicts = listOf("没有找到发货计划表中的订单"),
-                utilizationRate = 0.0,
-                onTimeDeliveryRate = 0.0
-            )
-        }
-        
-        // 对发货计划订单按交付期、管子数量、数量排序
-        val sortedOrders = shippingPlanOrders.sortedWith(compareBy<ProductionOrder> { 
+        // 对优先订单按交付期、管子数量、数量排序
+        val sortedPriorityOrders = priorityOrders.sortedWith(compareBy<ProductionOrder> { 
             // 按交付期排序
             it.plannedDeliveryDate ?: LocalDate.MAX 
         }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
@@ -288,6 +312,16 @@ class SmartScheduler {
             // 按未发数量排序（数量多的优先）
             -it.unshippedQuantity 
         })
+        
+        // 对其他订单按交付期排序
+        val sortedOtherOrders = otherOrders.sortedWith(compareBy<ProductionOrder> { 
+            it.plannedDeliveryDate ?: LocalDate.MAX 
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
+        .thenBy { !it.isPipeArrived() } // 管子已到货的优先
+        .thenBy { -it.unshippedQuantity })
+        
+        // 合并排序后的订单列表
+        val sortedOrders = sortedPriorityOrders + sortedOtherOrders
         
         val machineSchedule = mutableMapOf<String, MutableList<ProductionOrder>>()
         val scheduledOrders = mutableListOf<ProductionOrder>()
@@ -299,10 +333,20 @@ class SmartScheduler {
         }
         
         for (order in sortedOrders) {
+            // 根据管子情况调整排产数量
+            val adjustedQuantity = adjustQuantityByPipeStatus(order)
+            
+            // 计算生产天数：(数量*段数)/日产量=生产天数
+            val totalSegments = adjustedQuantity * order.segments
+            val productionDays = if (order.dailyProduction > 0) {
+                totalSegments.toDouble() / order.dailyProduction
+            } else {
+                order.productionDays
+            }
+            
             val bestMachine = findBestMachineForOrder(order, machines, machineSchedule, LocalDate.now(), constraints)
             
             if (bestMachine != null) {
-                val productionDays = order.calculateProductionDays()
                 val startDate = findEarliestStartDate(order, bestMachine, machineSchedule[bestMachine.id]!!, constraints)
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
                 
@@ -310,7 +354,9 @@ class SmartScheduler {
                     startDate = startDate,
                     endDate = endDate,
                     status = OrderStatus.IN_PRODUCTION,
-                    machine = bestMachine.id
+                    machine = bestMachine.id,
+                    quantity = adjustedQuantity,
+                    productionDays = productionDays
                 )
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)

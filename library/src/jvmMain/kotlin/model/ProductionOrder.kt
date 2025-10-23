@@ -26,6 +26,7 @@ data class ProductionOrder(
     val pipeStatus: String = "",       // 管子情况
     val pipeQuantity: Int = 0,         // 管子数量
     val pipeArrivalDate: LocalDate? = null, // 管子到货日期
+    val injectionCompleted: Int? = null, // 注塑完成数量
     val isCompleted: Boolean = false,   // 是否已完成
     val priority: OrderPriority,       // 订单优先级
     val status: OrderStatus,           // 订单状态

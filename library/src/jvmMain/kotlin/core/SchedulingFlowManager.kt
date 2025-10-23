@@ -188,6 +188,11 @@ class SchedulingFlowManager {
     
     /**
      * 步骤2：筛选需要排产的订单
+     * 新约束条件：
+     * 1. 优先管子数量足够的
+     * 2. 筛选出备注"已完成"或"改制"的不参与排产
+     * 3. 筛选出注塑完成大于未发货数的不参与排产，可以在预览用深色标注
+     * 4. 筛选外径为0的进行标红，不参与排产
      */
     private fun filterOrdersForScheduling(mergedTable: TableData): List<ProductionOrder> {
         val allOrders = orderConverter.convertToProductionOrders(mergedTable)
@@ -197,12 +202,27 @@ class SchedulingFlowManager {
             // 1. 未完成订单（计划发货数量 != 已发货数量）
             // 2. 管子情况不是"已完成"
             // 3. 未发数量 > 0
+            // 4. 备注不包含"已完成"或"改制"
+            // 5. 注塑完成不大于未发货数
+            // 6. 外径不为0
             val isNotCompleted = order.plannedQuantity != order.shippedQuantity
             val pipeNotCompleted = order.pipeStatus != "已完成"
             val hasUnshippedQuantity = order.unshippedQuantity > 0
             val hasValidDeliveryDate = order.plannedDeliveryDate != null || order.deliveryPeriod != null
             
-            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && hasValidDeliveryDate
+            // 检查备注是否包含"已完成"或"改制"
+            val notes = order.notes ?: ""
+            val isNotInNotes = !notes.contains("已完成") && !notes.contains("改制")
+            
+            // 检查注塑完成是否大于未发货数
+            val injectionCompleted = order.injectionCompleted ?: 0
+            val isInjectionNotExceed = injectionCompleted <= order.unshippedQuantity
+            
+            // 检查外径是否为0
+            val hasValidOuterDiameter = order.outerDiameter > 0
+            
+            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && hasValidDeliveryDate && 
+            isNotInNotes && isInjectionNotExceed && hasValidOuterDiameter
         }
     }
     

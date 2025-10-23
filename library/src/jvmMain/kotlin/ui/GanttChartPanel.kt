@@ -106,6 +106,8 @@ class GanttChartPanel : JPanel() {
     
     /**
      * 生成每日任务计划
+     * 任务可按天进行分割，例如换管时间从23点开始，则到次日3点结束
+     * 甘特图简单显示每天工作任务（包含h）
      */
     private fun generateDailySchedule(result: SchedulingResult) {
         dailySchedule.clear()
@@ -128,7 +130,7 @@ class GanttChartPanel : JPanel() {
                 val moldId = getMoldForOrder(order, result.machineSchedule)
                 val pipeSpec = "${order.innerDiameter}/${order.outerDiameter}"
                 
-                // 检查是否需要换模
+                // 检查是否需要换模（12小时）
                 if (currentMold != null && currentMold != moldId) {
                     val changeoverDate = startDate
                     dailySchedule[machineId]?.add(
@@ -136,13 +138,13 @@ class GanttChartPanel : JPanel() {
                             date = changeoverDate,
                             taskType = TaskType.MOLD_CHANGEOVER,
                             moldId = moldId,
-                            changeoverTime = 4, // 换模4小时
-                            description = "换模: $currentMold → $moldId"
+                            changeoverTime = 12, // 换模12小时
+                            description = "换模: $currentMold → $moldId (12h)"
                         )
                     )
                 }
                 
-                // 检查是否需要换接口
+                // 检查是否需要换接口（4小时）
                 if (currentPipeSpec != null && currentPipeSpec != pipeSpec) {
                     val changeoverDate = if (currentMold != null && currentMold != moldId) {
                         startDate.plusDays(1) // 如果同时换模和换接口，换接口在第二天
@@ -153,22 +155,22 @@ class GanttChartPanel : JPanel() {
                         DailyTask(
                             date = changeoverDate,
                             taskType = TaskType.PIPE_CHANGEOVER,
-                            changeoverTime = 12, // 换接口12小时
-                            description = "换接口: $currentPipeSpec → $pipeSpec"
+                            changeoverTime = 4, // 换接口4小时
+                            description = "换接口: $currentPipeSpec → $pipeSpec (4h)"
                         )
                     )
                 }
                 
-                // 添加生产任务
+                // 添加生产任务，按天分割
                 var currentDate = startDate
                 while (!currentDate.isAfter(endDate)) {
                     val productionHours = if (currentDate == startDate && (currentMold != null && currentMold != moldId || currentPipeSpec != null && currentPipeSpec != pipeSpec)) {
                         // 如果当天有换模或换接口，生产时间减少
-                        val changeoverHours = if (currentMold != null && currentMold != moldId) 4 else 0
-                        val pipeChangeHours = if (currentPipeSpec != null && currentPipeSpec != pipeSpec) 12 else 0
+                        val changeoverHours = if (currentMold != null && currentMold != moldId) 12 else 0
+                        val pipeChangeHours = if (currentPipeSpec != null && currentPipeSpec != pipeSpec) 4 else 0
                         maxOf(0, 24 - changeoverHours - pipeChangeHours)
                     } else {
-                        24 // 全天生产（无休息时间）
+                        24 // 全天生产（每日限制工时为24h）
                     }
                     
                     dailySchedule[machineId]?.add(
@@ -179,7 +181,7 @@ class GanttChartPanel : JPanel() {
                             orderQuantity = order.quantity,
                             moldId = moldId,
                             productionTime = productionHours,
-                            description = "生产订单${order.id}: ${order.quantity}支"
+                            description = "生产订单${order.id}: ${order.quantity}支 (${productionHours}h)"
                         )
                     )
                     
@@ -217,7 +219,7 @@ class GanttChartPanel : JPanel() {
         if (schedulingResult == null || machineNames.isEmpty()) {
             // 绘制空状态
             g2d.color = Color.GRAY
-            g2d.font = Font("Arial", Font.BOLD, 16)
+            g2d.font = Font("微软雅黑", Font.BOLD, 16)
             val message = "没有排产数据"
             val fm = g2d.fontMetrics
             val x = (width - fm.stringWidth(message)) / 2
@@ -252,14 +254,14 @@ class GanttChartPanel : JPanel() {
     
     private fun drawTitle(g2d: Graphics2D, width: Int) {
         g2d.color = Color.BLACK
-        g2d.font = Font("Arial", Font.BOLD, 18)
+        g2d.font = Font("微软雅黑", Font.BOLD, 18)
         val title = "排产甘特图 - 每日任务安排"
         val fm = g2d.fontMetrics
         val x = (width - fm.stringWidth(title)) / 2
         g2d.drawString(title, x, 25)
         
         // 添加说明文字
-        g2d.font = Font("Arial", Font.PLAIN, 12)
+        g2d.font = Font("微软雅黑", Font.PLAIN, 12)
         val explanation = "说明：每行代表一个机台，每列代表一天，彩色方块表示具体任务"
         val fm2 = g2d.fontMetrics
         val x2 = (width - fm2.stringWidth(explanation)) / 2
@@ -268,7 +270,7 @@ class GanttChartPanel : JPanel() {
     
     private fun drawDateAxis(g2d: Graphics2D, totalDays: Int) {
         g2d.color = Color.BLACK
-        g2d.font = Font("Arial", Font.BOLD, 10)
+        g2d.font = Font("微软雅黑", Font.BOLD, 10)
         
         val y = headerHeight - 5
         
@@ -294,7 +296,7 @@ class GanttChartPanel : JPanel() {
     
     private fun drawMachineAxis(g2d: Graphics2D, machineCount: Int) {
         g2d.color = Color.BLACK
-        g2d.font = Font("Arial", Font.BOLD, 12)
+        g2d.font = Font("微软雅黑", Font.BOLD, 12)
         
         for (i in machineNames.indices) {
             val y = headerHeight + 20 + i * rowHeight
@@ -330,7 +332,7 @@ class GanttChartPanel : JPanel() {
                         
                         // 显示"无任务"
                         g2d.color = Color.GRAY
-                        g2d.font = Font("Arial", Font.PLAIN, 8)
+                        g2d.font = Font("微软雅黑", Font.PLAIN, 8)
                         val fm = g2d.fontMetrics
                         val textX = x + (dayWidth - fm.stringWidth("无任务")) / 2
                         val textY = y + (rowHeight - 10) / 2 + fm.height / 4
@@ -354,7 +356,7 @@ class GanttChartPanel : JPanel() {
                                     
                                     // 绘制订单信息
                                     g2d.color = Color.BLACK
-                                    g2d.font = Font("Arial", Font.BOLD, 8)
+                                    g2d.font = Font("微软雅黑", Font.BOLD, 8)
                                     val orderText = "订单${task.orderId}"
                                     val fm = g2d.fontMetrics
                                     val textX = x + (dayWidth - fm.stringWidth(orderText)) / 2
@@ -362,10 +364,11 @@ class GanttChartPanel : JPanel() {
                                     g2d.drawString(orderText, textX, textY)
                                     
                                     // 绘制数量和时间
-                                    g2d.font = Font("Arial", Font.PLAIN, 7)
+                                    g2d.font = Font("微软雅黑", Font.PLAIN, 7)
                                     val detailText = "${task.orderQuantity}支 ${task.productionTime}h"
-                                    val detailX = x + (dayWidth - fm.stringWidth(detailText)) / 2
-                                    val detailY = currentY + taskHeight / 2 + fm.height + 2
+                                    val fm2 = g2d.fontMetrics
+                                    val detailX = x + (dayWidth - fm2.stringWidth(detailText)) / 2
+                                    val detailY = currentY + taskHeight / 2 + fm2.height + 2
                                     g2d.drawString(detailText, detailX, detailY)
                                     
                                     currentY += taskHeight
@@ -383,12 +386,20 @@ class GanttChartPanel : JPanel() {
                                     
                                     // 绘制换模信息
                                     g2d.color = Color.BLACK
-                                    g2d.font = Font("Arial", Font.BOLD, 8)
+                                    g2d.font = Font("微软雅黑", Font.BOLD, 8)
                                     val changeoverText = "换模${task.changeoverTime}h"
                                     val fm = g2d.fontMetrics
                                     val textX = x + (dayWidth - fm.stringWidth(changeoverText)) / 2
                                     val textY = currentY + taskHeight / 2 + fm.height / 4
                                     g2d.drawString(changeoverText, textX, textY)
+                                    
+                                    // 绘制模具信息
+                                    g2d.font = Font("微软雅黑", Font.PLAIN, 7)
+                                    val moldText = task.moldId ?: ""
+                                    val fm2 = g2d.fontMetrics
+                                    val moldX = x + (dayWidth - fm2.stringWidth(moldText)) / 2
+                                    val moldY = currentY + taskHeight / 2 + fm2.height + 2
+                                    g2d.drawString(moldText, moldX, moldY)
                                     
                                     currentY += taskHeight
                                 }
@@ -405,12 +416,20 @@ class GanttChartPanel : JPanel() {
                                     
                                     // 绘制换接口信息
                                     g2d.color = Color.WHITE
-                                    g2d.font = Font("Arial", Font.BOLD, 8)
+                                    g2d.font = Font("微软雅黑", Font.BOLD, 8)
                                     val changeoverText = "换接口${task.changeoverTime}h"
                                     val fm = g2d.fontMetrics
                                     val textX = x + (dayWidth - fm.stringWidth(changeoverText)) / 2
                                     val textY = currentY + taskHeight / 2 + fm.height / 4
                                     g2d.drawString(changeoverText, textX, textY)
+                                    
+                                    // 绘制管规格信息
+                                    g2d.font = Font("微软雅黑", Font.PLAIN, 7)
+                                    val pipeText = "管规格"
+                                    val fm2 = g2d.fontMetrics
+                                    val pipeX = x + (dayWidth - fm2.stringWidth(pipeText)) / 2
+                                    val pipeY = currentY + taskHeight / 2 + fm2.height + 2
+                                    g2d.drawString(pipeText, pipeX, pipeY)
                                     
                                     currentY += taskHeight
                                 }
@@ -437,15 +456,15 @@ class GanttChartPanel : JPanel() {
         g2d.drawRect(legendX, legendY, legendWidth, legendHeight)
         
         // 绘制图例标题
-        g2d.font = Font("Arial", Font.BOLD, 12)
+        g2d.font = Font("微软雅黑", Font.BOLD, 12)
         g2d.drawString("任务图例", legendX + 10, legendY + 15)
         
         var currentY = legendY + 30
         
         // 绘制换模任务图例
-        g2d.font = Font("Arial", Font.BOLD, 10)
+        g2d.font = Font("微软雅黑", Font.BOLD, 10)
         g2d.color = Color.BLACK
-        g2d.drawString("换模任务 (4h):", legendX + 10, currentY)
+        g2d.drawString("换模任务 (12h):", legendX + 10, currentY)
         currentY += 15
         
         g2d.color = changeoverColors["MOLD_CHANGEOVER"] ?: Color.ORANGE
@@ -456,9 +475,9 @@ class GanttChartPanel : JPanel() {
         currentY += 20
         
         // 绘制换接口任务图例
-        g2d.font = Font("Arial", Font.BOLD, 10)
+        g2d.font = Font("微软雅黑", Font.BOLD, 10)
         g2d.color = Color.BLACK
-        g2d.drawString("换接口任务 (12h):", legendX + 10, currentY)
+        g2d.drawString("换接口任务 (4h):", legendX + 10, currentY)
         currentY += 15
         
         g2d.color = changeoverColors["PIPE_CHANGEOVER"] ?: Color.RED
@@ -469,7 +488,7 @@ class GanttChartPanel : JPanel() {
         currentY += 20
         
         // 绘制订单颜色
-        g2d.font = Font("Arial", Font.PLAIN, 10)
+        g2d.font = Font("微软雅黑", Font.PLAIN, 10)
         g2d.color = Color.BLACK
         g2d.drawString("生产任务:", legendX + 10, currentY)
         currentY += 15

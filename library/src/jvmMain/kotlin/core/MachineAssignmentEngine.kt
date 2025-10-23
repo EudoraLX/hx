@@ -120,32 +120,32 @@ class MachineAssignmentEngine {
                 moldId = "MC-003-GN-2012",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 130/154-Ø 204/226"),
                 description = "机台1#规则",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "1#",
                 moldId = "MC-007-H&G-2019",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 102/Ø 122-Ø 195/Ø 215"),
                 description = "Ø 174外径和两个小锥",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "1#",
                 moldId = "MC-030-H&G-2022",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 102/Ø 122-Ø 195/Ø 215 (大)"),
                 description = "大规格",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "1#",
                 moldId = "M-013-H&G-2020",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 140、Ø 154、Ø 160/Ø 174"),
                 description = "机台1#规则",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             
             // 机台2#
@@ -154,40 +154,40 @@ class MachineAssignmentEngine {
                 moldId = "M-008-H&G-2019",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 100、Ø 113、Ø 120/Ø 137"),
                 description = "Ø 150外径及以下",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "2#",
                 moldId = "M-019-H&G-2020",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 90"),
                 description = "Ø 150外径及以下",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "2#",
                 moldId = "M-020-H&G-2020",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 110"),
                 description = "Ø 150外径及以下",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "2#",
                 moldId = "M-021-H&G-2020",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 120"),
                 description = "Ø 150外径及以下",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "2#",
                 moldId = "M-022-H&G-2020",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 130/Ø 147、Ø 150"),
                 description = "Ø 150外径及以下",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             
             // 机台3#
@@ -196,32 +196,32 @@ class MachineAssignmentEngine {
                 moldId = "M-005-H&G-2018",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 125、Ø 130、Ø 140/Ø 160"),
                 description = "Ø 160~Ø 218外径",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "3#",
                 moldId = "M-039-H&G-2025",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 180、Ø 200/Ø 217 (大)"),
                 description = "Ø 160~Ø 218外径",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "3#",
                 moldId = "M-004-H&G-2018",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 180、Ø 200/Ø 218"),
                 description = "Ø 160~Ø 218外径",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "3#",
                 moldId = "M-018-H&G-2021",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 182/Ø 200"),
                 description = "Ø 160~Ø 218外径",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             
             // 机台4# (可互换5#)
@@ -230,8 +230,8 @@ class MachineAssignmentEngine {
                 moldId = "M-011-H&G-2019",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 220、Ø 230/Ø 250"),
                 description = "Ø 250~Ø 272、Ø 414外径 机动5#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("5#")
             ),
             MachineRule(
@@ -239,8 +239,8 @@ class MachineAssignmentEngine {
                 moldId = "M-010-H&G-2019",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 240/Ø 260"),
                 description = "Ø 250~Ø 272、Ø 414外径 机动5#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("5#")
             ),
             MachineRule(
@@ -248,8 +248,8 @@ class MachineAssignmentEngine {
                 moldId = "M-033-H&G-2022",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 248/Ø 272"),
                 description = "Ø 250~Ø 272、Ø 414外径 机动5#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("5#")
             ),
             MachineRule(
@@ -257,8 +257,8 @@ class MachineAssignmentEngine {
                 moldId = "M-015-H&G-2021",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 400/Ø 414"),
                 description = "Ø 250~Ø 272、Ø 414外径 机动5#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("5#")
             ),
             
@@ -268,8 +268,8 @@ class MachineAssignmentEngine {
                 moldId = "M-035-H&G-2022",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 270/Ø 290"),
                 description = "Ø 290~Ø 400外径 机动4#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("4#")
             ),
             MachineRule(
@@ -277,8 +277,8 @@ class MachineAssignmentEngine {
                 moldId = "M-032-H&G-2022",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 300/Ø 320"),
                 description = "Ø 290~Ø 400外径 机动4#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("4#")
             ),
             MachineRule(
@@ -286,8 +286,8 @@ class MachineAssignmentEngine {
                 moldId = "M-006-H&G-2018",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 350、Ø 375/Ø 400"),
                 description = "Ø 290~Ø 400外径 机动4#",
-                changeoverTime = 4,
-                pipeChangeTime = 12,
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4,   // 换管时间4小时
                 interchangeableWith = listOf("4#")
             ),
             
@@ -297,32 +297,32 @@ class MachineAssignmentEngine {
                 moldId = "MC-036-H&G-2024",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 180/Ø 198-Ø 330/Ø 348"),
                 description = "Ø 280、Ø 510外径和两个大锥",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "6#",
                 moldId = "MC-017-H&G-2021",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 180/200-Ø 360/380"),
                 description = "Ø 280、Ø 510外径和两个大锥",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "6#",
                 moldId = "M-014-H&G-2021",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 280"),
                 description = "Ø 280、Ø 510外径和两个大锥",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             MachineRule(
                 machineId = "6#",
                 moldId = "M-009-H&G-2019",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 482/Ø 510"),
                 description = "Ø 280、Ø 510外径和两个大锥",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             ),
             
             // 机台7#
@@ -331,8 +331,8 @@ class MachineAssignmentEngine {
                 moldId = "M-037-H&G-2024",
                 pipeSpecs = pipeSpecParser.parsePipeSpecs("Ø 600/Ø 625"),
                 description = "Ø 600外径",
-                changeoverTime = 4,
-                pipeChangeTime = 12
+                changeoverTime = 12, // 换模时间12小时
+                pipeChangeTime = 4    // 换管时间4小时
             )
         )
     }
