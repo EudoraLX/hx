@@ -42,9 +42,10 @@ class GanttChartPanel : JPanel() {
     private var schedulingResult: SchedulingResult? = null
     private var startDate: LocalDate = LocalDate.now()
     private var endDate: LocalDate = LocalDate.now().plusDays(30)
-    private val dayWidth = 40
-    private val rowHeight = 40
-    private val headerHeight = 60
+    private val dayWidth = 80  // 增加每日框的宽度，显示更多信息
+    private val rowHeight = 60  // 增加行高，显示更多任务
+    private val headerHeight = 80  // 增加表头高度
+    private val maxTasksPerDay = 3  // 一天最多3个任务
     private val machineNames = mutableListOf<String>()
     private val orderColors = mutableMapOf<String, Color>()
     private val changeoverColors = mutableMapOf<String, Color>()
@@ -161,9 +162,16 @@ class GanttChartPanel : JPanel() {
                     )
                 }
                 
-                // 添加生产任务，按天分割
+                // 添加生产任务，按天分割，一天最多3个任务
                 var currentDate = startDate
                 while (!currentDate.isAfter(endDate)) {
+                    // 检查当天是否已有3个任务
+                    val existingTasks = dailySchedule[machineId]?.count { it.date == currentDate } ?: 0
+                    if (existingTasks >= maxTasksPerDay) {
+                        currentDate = currentDate.plusDays(1)
+                        continue
+                    }
+                    
                     val productionHours = if (currentDate == startDate && (currentMold != null && currentMold != moldId || currentPipeSpec != null && currentPipeSpec != pipeSpec)) {
                         // 如果当天有换模或换接口，生产时间减少
                         val changeoverHours = if (currentMold != null && currentMold != moldId) 12 else 0
@@ -173,17 +181,23 @@ class GanttChartPanel : JPanel() {
                         24 // 全天生产（每日限制工时为24h）
                     }
                     
-                    dailySchedule[machineId]?.add(
-                        DailyTask(
-                            date = currentDate,
-                            taskType = TaskType.PRODUCTION,
-                            orderId = order.id,
-                            orderQuantity = order.quantity,
-                            moldId = moldId,
-                            productionTime = productionHours,
-                            description = "生产订单${order.id}: ${order.quantity}支 (${productionHours}h)"
+                    // 将生产任务分割为最多3个任务
+                    val tasksPerDay = minOf(maxTasksPerDay - existingTasks, maxOf(1, (productionHours / 8).toInt())) // 每8小时一个任务
+                    val hoursPerTask = productionHours / tasksPerDay
+                    
+                    repeat(tasksPerDay) { taskIndex ->
+                        dailySchedule[machineId]?.add(
+                            DailyTask(
+                                date = currentDate,
+                                taskType = TaskType.PRODUCTION,
+                                orderId = order.id,
+                                orderQuantity = order.quantity / tasksPerDay,
+                                moldId = moldId,
+                                productionTime = hoursPerTask.toInt(),
+                                description = "生产订单${order.id}: ${order.quantity / tasksPerDay}支 (${hoursPerTask.toInt()}h)"
+                            )
                         )
-                    )
+                    }
                     
                     currentDate = currentDate.plusDays(1)
                 }
@@ -338,11 +352,12 @@ class GanttChartPanel : JPanel() {
                         val textY = y + (rowHeight - 10) / 2 + fm.height / 4
                         g2d.drawString("无任务", textX, textY)
                     } else {
-                        // 有任务的日期
+                        // 有任务的日期，限制最多3个任务
                         var currentY = y
-                        val taskHeight = (rowHeight - 10) / dayTasks.size
+                        val limitedTasks = dayTasks.take(maxTasksPerDay) // 限制最多3个任务
+                        val taskHeight = (rowHeight - 10) / limitedTasks.size
                         
-                        dayTasks.forEach { task ->
+                        limitedTasks.forEach { task ->
                             when (task.taskType) {
                                 TaskType.PRODUCTION -> {
                                     // 绘制生产任务

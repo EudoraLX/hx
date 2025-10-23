@@ -108,7 +108,12 @@ class SmartScheduler {
                 order.productionDays
             }
             
-            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
+            // 确保所有订单都能找到合适的机台进行排产
+            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints) 
+                ?: machines.minByOrNull { machine -> 
+                    // 使用机台可用时间映射，如果没有则使用当前时间
+                    machineAvailability[machine.id] ?: LocalDate.now()
+                } // 如果找不到最佳机台，选择最早可用的机台
             
             if (bestMachine != null) {
                 val startDate = machineAvailability[bestMachine.id]!!
@@ -128,10 +133,13 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 
                 // 更新机台可用时间（考虑换模/换管时间）
-                // 机台可连续生产，只需考虑换模/换管时间
-                val changeoverTime = getChangeoverTime(order, bestMachine)
-                // 16小时换模/换管时间，按小时计算后转换为天数
-                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 换模和换管可以不同时间进行，优化生产安排
+                val moldChangeoverTime = getMoldChangeoverTime(order, bestMachine)
+                val pipeChangeoverTime = getPipeChangeoverTime(order, bestMachine)
+                
+                // 换模和换管可以并行或错开安排，取最大值
+                val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 machineAvailability[bestMachine.id] = endDate.plusDays(changeoverDays)
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
@@ -282,15 +290,29 @@ class SmartScheduler {
     
     /**
      * 获取换模/换管时间
-     * 换模时间为12h，换管时间为4h，都是连续时间
-     * 机台可连续生产，换模/换管时间不影响连续生产能力
+     * 换模和换管可以不同时间进行，优化生产安排
+     * 机台可连续生产，换模/换管时间按实际小时计算
      */
     private fun getChangeoverTime(order: ProductionOrder, machine: Machine): Int {
         // 根据机台配置规则获取换模/换管时间
         // 换模时间12小时，换管时间4小时
-        // 机台可连续生产，换模/换管时间按实际小时计算
-        // 例如：晚上23点开始换管则次日3点完成，16小时可以跨天完成
+        // 换模和换管可以不同时间进行，可以并行或错开安排
+        // 例如：晚上23点开始换管则次日3点完成，可以跨天完成
         return 16 // 16小时换模/换管时间（12小时换模 + 4小时换管）
+    }
+    
+    /**
+     * 获取换模时间（单独计算）
+     */
+    private fun getMoldChangeoverTime(order: ProductionOrder, machine: Machine): Int {
+        return 12 // 换模时间12小时
+    }
+    
+    /**
+     * 获取换管时间（单独计算）
+     */
+    private fun getPipeChangeoverTime(order: ProductionOrder, machine: Machine): Int {
+        return 4 // 换管时间4小时
     }
     
     /**
@@ -312,18 +334,28 @@ class SmartScheduler {
             machineSchedule[machine.id] = mutableListOf()
         }
         
+        // 连续排产：每个机台可连续生产，不受单次生产限制
+        val machineAvailability = mutableMapOf<String, LocalDate>()
+        machines.forEach { machine ->
+            machineAvailability[machine.id] = LocalDate.now()
+        }
+        
         for (order in sortedOrders) {
-            val bestMachine = findBestMachineForOrder(order, machines, machineSchedule, LocalDate.now(), constraints)
+            // 确保所有参与排产的订单都进行排产
+            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
+                ?: machines.minByOrNull { machine -> 
+                    // 使用机台可用时间映射，如果没有则使用当前时间
+                    machineAvailability[machine.id] ?: LocalDate.now()
+                } // 如果找不到最佳机台，选择最早可用的机台
             
             if (bestMachine != null) {
                 val productionDays = order.calculateProductionDays()
-                val startDate = findEarliestStartDate(order, bestMachine, machineSchedule[bestMachine.id]!!, constraints)
+                val startDate = machineAvailability[bestMachine.id]!!
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
                 
-                // 检查是否能在交付期内完成
+                // 检查是否能在交付期内完成（但即使超期也要排产）
                 if (constraints.respectDeadline && order.plannedDeliveryDate != null && endDate.isAfter(order.plannedDeliveryDate)) {
-                    conflicts.add("订单 ${order.id} 无法在交付期内完成")
-                    continue
+                    conflicts.add("订单 ${order.id} 无法在交付期内完成，但仍会排产")
                 }
                 
                 val scheduledOrder = order.copy(
@@ -337,9 +369,13 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 
                 // 机台可连续生产，更新机台可用时间时考虑换模/换管时间
-                val changeoverTime = getChangeoverTime(order, bestMachine)
-                // 16小时换模/换管时间，按小时计算后转换为天数
-                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 换模和换管可以不同时间进行，优化生产安排
+                val moldChangeoverTime = getMoldChangeoverTime(order, bestMachine)
+                val pipeChangeoverTime = getPipeChangeoverTime(order, bestMachine)
+                
+                // 换模和换管可以并行或错开安排，取最大值
+                val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式下，机台在完成一个订单后经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
@@ -399,6 +435,12 @@ class SmartScheduler {
             machineSchedule[machine.id] = mutableListOf()
         }
         
+        // 连续排产：每个机台可连续生产，不受单次生产限制
+        val machineAvailability = mutableMapOf<String, LocalDate>()
+        machines.forEach { machine ->
+            machineAvailability[machine.id] = LocalDate.now()
+        }
+        
         for (order in sortedOrders) {
             // 根据管子情况调整排产数量
             val adjustedQuantity = adjustQuantityByPipeStatus(order)
@@ -411,10 +453,15 @@ class SmartScheduler {
                 order.productionDays
             }
             
-            val bestMachine = findBestMachineForOrder(order, machines, machineSchedule, LocalDate.now(), constraints)
+            // 确保所有订单都能找到合适的机台进行排产
+            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
+                ?: machines.minByOrNull { machine -> 
+                    // 使用机台可用时间映射，如果没有则使用当前时间
+                    machineAvailability[machine.id] ?: LocalDate.now()
+                } // 如果找不到最佳机台，选择最早可用的机台
             
             if (bestMachine != null) {
-                val startDate = findEarliestStartDate(order, bestMachine, machineSchedule[bestMachine.id]!!, constraints)
+                val startDate = machineAvailability[bestMachine.id]!!
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
                 
                 val scheduledOrder = order.copy(
@@ -430,9 +477,13 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 
                 // 机台可连续生产，完成订单后可以立即开始下一个订单（考虑换模时间）
-                val changeoverTime = getChangeoverTime(order, bestMachine)
-                // 16小时换模/换管时间，按小时计算后转换为天数
-                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 换模和换管可以不同时间进行，优化生产安排
+                val moldChangeoverTime = getMoldChangeoverTime(order, bestMachine)
+                val pipeChangeoverTime = getPipeChangeoverTime(order, bestMachine)
+                
+                // 换模和换管可以并行或错开安排，取最大值
+                val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
@@ -485,12 +536,23 @@ class SmartScheduler {
             machineSchedule[machine.id] = mutableListOf()
         }
         
+        // 连续排产：每个机台可连续生产，不受单次生产限制
+        val machineAvailability = mutableMapOf<String, LocalDate>()
+        machines.forEach { machine ->
+            machineAvailability[machine.id] = LocalDate.now()
+        }
+        
         for (order in weightedOrders) {
-            val bestMachine = findBestMachineForOrder(order, machines, machineSchedule, LocalDate.now(), constraints)
+            // 确保所有订单都能找到合适的机台进行排产
+            val bestMachine = findBestMachineForOrderWithAvailability(order, machines, machineAvailability, constraints)
+                ?: machines.minByOrNull { machine -> 
+                    // 使用机台可用时间映射，如果没有则使用当前时间
+                    machineAvailability[machine.id] ?: LocalDate.now()
+                } // 如果找不到最佳机台，选择最早可用的机台
             
             if (bestMachine != null) {
                 val productionDays = order.calculateProductionDays()
-                val startDate = findEarliestStartDate(order, bestMachine, machineSchedule[bestMachine.id]!!, constraints)
+                val startDate = machineAvailability[bestMachine.id]!!
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
                 
                 val scheduledOrder = order.copy(
@@ -504,9 +566,13 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 
                 // 机台可连续生产，完成订单后可以立即开始下一个订单（考虑换模时间）
-                val changeoverTime = getChangeoverTime(order, bestMachine)
-                // 16小时换模/换管时间，按小时计算后转换为天数
-                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 换模和换管可以不同时间进行，优化生产安排
+                val moldChangeoverTime = getMoldChangeoverTime(order, bestMachine)
+                val pipeChangeoverTime = getPipeChangeoverTime(order, bestMachine)
+                
+                // 换模和换管可以并行或错开安排，取最大值
+                val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")

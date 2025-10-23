@@ -153,8 +153,51 @@ class PipeSpecParser {
         val innerDiff = kotlin.math.abs(orderSpec.innerDiameter - ruleSpec.innerDiameter)
         val outerDiff = kotlin.math.abs(orderSpec.outerDiameter - ruleSpec.outerDiameter)
         
-        // 允许一定的误差范围（±5mm）
-        return innerDiff <= 5.0 && outerDiff <= 5.0
+        // 扩大误差范围以支持更多规格匹配（±10mm）
+        // 这样可以匹配更多订单到合适的机台
+        return innerDiff <= 10.0 && outerDiff <= 10.0
+    }
+    
+    /**
+     * 智能匹配管规格
+     * 支持范围匹配和近似匹配
+     * 根据机台模具管规格表进行精确匹配
+     */
+    fun smartPipeSpecMatch(orderSpec: PipeSpecification, ruleSpec: PipeSpecification): Boolean {
+        // 1. 精确匹配
+        if (orderSpec.innerDiameter == ruleSpec.innerDiameter && 
+            orderSpec.outerDiameter == ruleSpec.outerDiameter) {
+            return true
+        }
+        
+        // 2. 范围匹配（处理102/195, 180/330等范围规格）
+        val innerDiff = kotlin.math.abs(orderSpec.innerDiameter - ruleSpec.innerDiameter)
+        val outerDiff = kotlin.math.abs(orderSpec.outerDiameter - ruleSpec.outerDiameter)
+        
+        // 3. 根据外径大小调整匹配精度
+        val tolerance = when {
+            orderSpec.outerDiameter <= 150 -> 5.0  // 小规格，精确匹配
+            orderSpec.outerDiameter <= 300 -> 10.0  // 中规格，中等精度
+            orderSpec.outerDiameter <= 500 -> 15.0  // 大规格，宽松匹配
+            else -> 20.0  // 超大规格，最宽松匹配
+        }
+        
+        return innerDiff <= tolerance && outerDiff <= tolerance
+    }
+    
+    /**
+     * 精确匹配管规格
+     * 只看外径的匹配规则：
+     * 1. 外径匹配即可，完全忽略内径
+     * 2. 外径相同或相近就匹配成功
+     * 3. 内径可以任意，不需要考虑
+     */
+    fun exactPipeSpecMatch(orderSpec: PipeSpecification, ruleSpec: PipeSpecification): Boolean {
+        // 只看外径，外径相同或相近就匹配成功
+        val outerDiff = kotlin.math.abs(orderSpec.outerDiameter - ruleSpec.outerDiameter)
+        
+        // 外径误差范围：±5mm
+        return outerDiff <= 5.0
     }
     
     /**

@@ -19,14 +19,16 @@ class MachineAssignmentEngine {
             outerDiameter = order.outerDiameter
         )
         
-        // 1. 查找匹配的机台规则
+        // 1. 查找匹配的机台规则（使用精确匹配）
         val matchingRules = machineRules.filter { rule ->
             rule.pipeSpecs.any { spec -> 
-                pipeSpecParser.isPipeSpecMatch(orderSpec, spec)
+                pipeSpecParser.exactPipeSpecMatch(orderSpec, spec)
             }
         }
         
         if (matchingRules.isEmpty()) {
+            // 调试信息：记录无法匹配的订单规格
+            println("无法匹配的订单规格: 内径=${orderSpec.innerDiameter}, 外径=${orderSpec.outerDiameter}")
             return null
         }
         
