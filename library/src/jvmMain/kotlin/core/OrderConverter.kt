@@ -28,6 +28,7 @@ class OrderConverter {
             try {
                 val order = convertRowToOrder(row, tableData.headers, rowIndex)
                 if (order != null) {
+                    // 备注保持原样，不添加任何标记
                     orders.add(order)
                 }
             } catch (e: Exception) {
@@ -36,6 +37,25 @@ class OrderConverter {
         }
         
         return orders
+    }
+    
+    /**
+     * 检查订单是否应该被排除（不参与排产）
+     */
+    private fun isOrderExcluded(order: ProductionOrder): Boolean {
+        // 不参与排产的条件：
+        // 1. 备注包含"已完成"或"改制"
+        // 2. 外径为0
+        // 3. 注塑完成 > 未发货数
+        val notes = order.notes ?: ""
+        val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
+        
+        val hasZeroOuterDiameter = order.outerDiameter <= 0
+        
+        val injectionCompleted = order.injectionCompleted ?: 0
+        val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
+        
+        return hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
     }
     
     /**
@@ -65,7 +85,7 @@ class OrderConverter {
         val pipeStatus = getValueByHeader(row, headers, "管子情况") ?: ""
         val pipeQuantity = getValueByHeader(row, headers, "管/棒数量")?.toIntOrNull() ?: 0
         val pipeArrivalDate = parseDate(getValueByHeader(row, headers, "采购回馈（-1管子时间）"))
-        val injectionCompleted = getValueByHeader(row, headers, "注塑完成")?.toIntOrNull()
+        val injectionCompleted = getValueByHeader(row, headers, "注射完成")?.toIntOrNull()
         
         // 确定订单状态
         val status = determineOrderStatus(plannedQuantity, shippedQuantity, unshippedQuantity)

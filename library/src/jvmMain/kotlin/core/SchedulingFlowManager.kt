@@ -30,6 +30,9 @@ class SchedulingFlowManager {
         // 步骤2：筛选需要排产的订单
         val filteredOrders = filterOrdersForScheduling(mergedTable)
         
+        // 步骤2.5：获取不参与排产的订单（用于绿色标注）
+        val excludedOrders = getExcludedOrders(mergedTable)
+        
         // 步骤3：根据表格中的发货计划信息调整优先级
         val prioritizedOrders = adjustPriorityFromTable(filteredOrders, mergedTable)
         
@@ -42,6 +45,7 @@ class SchedulingFlowManager {
         return SchedulingFlowResult(
             mergedTable = mergedTable,
             filteredOrders = prioritizedOrders,
+            excludedOrders = excludedOrders, // 添加排除的订单
             schedulingResult = schedulingResult,
             schedulingPlanTable = schedulingPlanTable
         )
@@ -62,6 +66,9 @@ class SchedulingFlowManager {
         // 步骤2：筛选需要排产的订单
         val filteredOrders = filterOrdersForScheduling(mergedTable)
         
+        // 步骤2.5：获取不参与排产的订单（用于绿色标注）
+        val excludedOrders = getExcludedOrders(mergedTable)
+        
         // 步骤3：根据发货计划表调整优先级
         val prioritizedOrders = adjustPriorityByShippingPlan(filteredOrders, shippingPlanTable)
         
@@ -74,6 +81,7 @@ class SchedulingFlowManager {
         return SchedulingFlowResult(
             mergedTable = mergedTable,
             filteredOrders = prioritizedOrders,
+            excludedOrders = excludedOrders, // 添加排除的订单
             schedulingResult = schedulingResult,
             schedulingPlanTable = schedulingPlanTable
         )
@@ -190,9 +198,10 @@ class SchedulingFlowManager {
      * 步骤2：筛选需要排产的订单
      * 新约束条件：
      * 1. 优先管子数量足够的
-     * 2. 筛选出备注"已完成"或"改制"的不参与排产
-     * 3. 筛选出注塑完成大于未发货数的不参与排产，可以在预览用深色标注
-     * 4. 筛选外径为0的进行标红，不参与排产
+     * 2. 筛选出备注"已完成"或"改制"的不参与排产（绿色标注）
+     * 3. 筛选出注塑完成大于未发货数的不参与排产（绿色标注）
+     * 4. 筛选外径为0的不参与排产（绿色标注）
+     * 5. 机台可连续生产，不受单次生产限制
      */
     private fun filterOrdersForScheduling(mergedTable: TableData): List<ProductionOrder> {
         val allOrders = orderConverter.convertToProductionOrders(mergedTable)
@@ -208,21 +217,44 @@ class SchedulingFlowManager {
             val isNotCompleted = order.plannedQuantity != order.shippedQuantity
             val pipeNotCompleted = order.pipeStatus != "已完成"
             val hasUnshippedQuantity = order.unshippedQuantity > 0
-            val hasValidDeliveryDate = order.plannedDeliveryDate != null || order.deliveryPeriod != null
+            // 移除交付期约束：没有交付期的订单也需要排产
             
             // 检查备注是否包含"已完成"或"改制"
             val notes = order.notes ?: ""
             val isNotInNotes = !notes.contains("已完成") && !notes.contains("改制")
             
-            // 检查注塑完成是否大于未发货数
+            // 检查注射完成是否大于未发货数
             val injectionCompleted = order.injectionCompleted ?: 0
             val isInjectionNotExceed = injectionCompleted <= order.unshippedQuantity
             
             // 检查外径是否为0
             val hasValidOuterDiameter = order.outerDiameter > 0
             
-            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && hasValidDeliveryDate && 
+            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && 
             isNotInNotes && isInjectionNotExceed && hasValidOuterDiameter
+        }
+    }
+    
+    /**
+     * 获取不参与排产的订单（用于绿色标注）
+     */
+    fun getExcludedOrders(mergedTable: TableData): List<ProductionOrder> {
+        val allOrders = orderConverter.convertToProductionOrders(mergedTable)
+        
+        return allOrders.filter { order ->
+            // 不参与排产的条件：
+            // 1. 备注包含"已完成"或"改制"
+            // 2. 外径为0
+            // 3. 注射完成 > 未发货数
+            val notes = order.notes ?: ""
+            val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
+            
+            val hasZeroOuterDiameter = order.outerDiameter <= 0
+            
+            val injectionCompleted = order.injectionCompleted ?: 0
+            val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
+            
+            hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
         }
     }
     
@@ -312,6 +344,7 @@ class SchedulingFlowManager {
             avoidOvertime = false,
             balanceLoad = true
         )
+        // 机台可连续生产，不受单次生产限制
         
         // 执行排产
         return smartScheduler.schedule(orders, strategy, constraints, machines)
@@ -334,6 +367,7 @@ class SchedulingFlowManager {
             avoidOvertime = false,
             balanceLoad = true
         )
+        // 机台可连续生产，不受单次生产限制
         
         // 执行排产
         return smartScheduler.schedule(orders, SchedulingStrategy.BALANCED, constraints, machines)
@@ -483,6 +517,7 @@ data class ShippingPlanInfo(
 data class SchedulingFlowResult(
     val mergedTable: TableData,           // 合并后的表
     val filteredOrders: List<ProductionOrder>, // 筛选后的订单
+    val excludedOrders: List<ProductionOrder> = emptyList(), // 不参与排产的订单（绿色标注）
     val schedulingResult: SchedulingResult,    // 排产结果
     val schedulingPlanTable: TableData        // 排产计划表
 )

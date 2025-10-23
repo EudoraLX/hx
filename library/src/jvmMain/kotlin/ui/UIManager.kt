@@ -335,7 +335,21 @@ class UIManager {
             emptyList()
         }
         
-        enhancedPreviewManager.updateFilteredDataPreview(table, ordersToShow)
+        // 获取不参与排产的订单（用于绿色标注）
+        val excludedOrders = if (schedulingFlowResult != null) {
+            schedulingFlowResult!!.excludedOrders
+        } else {
+            // 如果没有排产流程结果，尝试从当前表格获取排除的订单
+            val currentTable = getCurrentTable()
+            if (currentTable != null) {
+                val flowManager = SchedulingFlowManager()
+                flowManager.getExcludedOrders(currentTable)
+            } else {
+                emptyList()
+            }
+        }
+        
+        enhancedPreviewManager.updateFilteredDataPreview(table, ordersToShow, excludedOrders)
     }
     
     /**

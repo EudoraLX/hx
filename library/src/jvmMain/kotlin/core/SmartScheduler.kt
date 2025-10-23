@@ -32,11 +32,12 @@ class SmartScheduler {
     
     /**
      * 产能优先排产
-     * 基于管子数×段数=总段数，每个机台一次生产1段
+     * 以机台配置表为核心，尽可能少换模具和管子，最大化生产
      * 新约束条件：
-     * 1. 优先管子数量足够的
-     * 2. 管子够进行优先排产。管子不够（0或负数）则进行后排产，排产数为：未发货数-注塑完成
-     * 3. 根据管子情况进行排产，正数代表可排产，负数代表管子缺货，优先排产正数管子
+     * 1. 所有非排除订单都参与排产
+     * 2. 排产数量 = 未发货数量 - 注塑完成
+     * 3. 优先相同模具和管子规格的订单组合生产
+     * 4. 最大化产能利用率
      */
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
@@ -75,7 +76,7 @@ class SmartScheduler {
             }
         }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
         
-        // 并行排产：每个机台可以同时处理不同模具的订单
+        // 连续排产：每个机台可连续生产，不受单次生产限制
         val machineAvailability = mutableMapOf<String, LocalDate>()
         machines.forEach { machine ->
             machineAvailability[machine.id] = LocalDate.now()
@@ -113,8 +114,11 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 
                 // 更新机台可用时间（考虑换模/换管时间）
+                // 机台可连续生产，只需考虑换模/换管时间
                 val changeoverTime = getChangeoverTime(order, bestMachine)
-                machineAvailability[bestMachine.id] = endDate.plusDays((changeoverTime + 1).toLong())
+                // 16小时换模/换管时间，按小时计算后转换为天数
+                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                machineAvailability[bestMachine.id] = endDate.plusDays(changeoverDays)
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
             }
@@ -132,37 +136,51 @@ class SmartScheduler {
     
     /**
      * 组合相同规格的订单
-     * 将相同内外径、相同机台的订单组合在一起生产，减少换模/换管次数
+     * 以机台配置表为核心，将相同模具和管子规格的订单组合生产，减少换模/换管次数
+     * 机台可连续生产，支持长时间连续作业，最大化产能利用率
      */
     private fun combineOrdersBySpec(orders: List<ProductionOrder>): List<ProductionOrder> {
         val combinedOrders = mutableListOf<ProductionOrder>()
         val processedOrders = mutableSetOf<String>()
         
+        // 使用机台分配引擎获取机台配置信息
+        val machineAssignmentEngine = MachineAssignmentEngine()
+        val machineRules = machineAssignmentEngine.createDefaultMachineRules()
+        
         for (order in orders) {
             if (processedOrders.contains(order.id)) continue
             
-            // 查找相同规格的订单（相同内外径）
-            val sameSpecOrders = orders.filter { 
-                it.id != order.id && 
-                !processedOrders.contains(it.id) &&
-                it.innerDiameter == order.innerDiameter && 
-                it.outerDiameter == order.outerDiameter &&
-                it.priority == order.priority  // 相同优先级的订单才能组合
+            // 获取订单的机台分配信息
+            val orderAssignment = machineAssignmentEngine.assignMachine(order, machineRules)
+            val orderMachineId = orderAssignment?.machineId
+            val orderMoldId = orderAssignment?.moldId
+            
+            // 查找相同机台、相同模具的订单（减少换模次数）
+            val sameMachineMoldOrders = orders.filter { otherOrder ->
+                otherOrder.id != order.id && 
+                !processedOrders.contains(otherOrder.id) &&
+                otherOrder.innerDiameter == order.innerDiameter && 
+                otherOrder.outerDiameter == order.outerDiameter &&
+                otherOrder.priority == order.priority  // 相同优先级的订单才能组合
+            }.filter { otherOrder ->
+                // 检查是否使用相同机台和模具
+                val otherAssignment = machineAssignmentEngine.assignMachine(otherOrder, machineRules)
+                otherAssignment?.machineId == orderMachineId && otherAssignment?.moldId == orderMoldId
             }
             
-            if (sameSpecOrders.isNotEmpty()) {
+            if (sameMachineMoldOrders.isNotEmpty()) {
                 // 组合订单：合并数量，使用第一个订单的其他信息
-                val totalQuantity = order.quantity + sameSpecOrders.sumOf { it.quantity }
+                val totalQuantity = order.quantity + sameMachineMoldOrders.sumOf { it.quantity }
                 val combinedOrder = order.copy(
                     quantity = totalQuantity,
-                    notes = "组合订单: ${order.id} + ${sameSpecOrders.joinToString(", ") { it.id }}"
+                    notes = "组合订单(相同模具): ${order.id} + ${sameMachineMoldOrders.joinToString(", ") { it.id }}"
                 )
                 
                 combinedOrders.add(combinedOrder)
                 processedOrders.add(order.id)
-                processedOrders.addAll(sameSpecOrders.map { it.id })
+                processedOrders.addAll(sameMachineMoldOrders.map { it.id })
             } else {
-                // 没有相同规格的订单，单独处理
+                // 没有相同机台模具的订单，单独处理
                 combinedOrders.add(order)
                 processedOrders.add(order.id)
             }
@@ -173,6 +191,7 @@ class SmartScheduler {
     
     /**
      * 根据机台可用性找到最佳机台
+     * 以机台配置表为核心，优先选择产能利用率最高的机台
      */
     private fun findBestMachineForOrderWithAvailability(
         order: ProductionOrder, 
@@ -180,58 +199,80 @@ class SmartScheduler {
         machineAvailability: Map<String, LocalDate>,
         constraints: SchedulingConstraints
     ): Machine? {
+        // 使用机台分配引擎获取最适合的机台
+        val machineAssignmentEngine = MachineAssignmentEngine()
+        val machineRules = machineAssignmentEngine.createDefaultMachineRules()
+        val assignment = machineAssignmentEngine.assignMachine(order, machineRules)
+        
+        if (assignment != null) {
+            // 找到对应的机台
+            val assignedMachine = machines.find { it.id == assignment.machineId }
+            if (assignedMachine != null && assignedMachine.isAvailable) {
+                return assignedMachine
+            }
+        }
+        
+        // 如果没有找到合适的机台，使用原来的逻辑
         val suitableMachines = machines.filter { machine ->
-            // 检查机台是否适合该订单（基于管规格）
-            isMachineSuitableForOrder(order, machine)
+            machine.isAvailable && isMachineSuitableForOrder(order, machine)
         }
         
         if (suitableMachines.isEmpty()) return null
         
-        // 选择可用时间最早的机台
+        // 选择可用时间最早且产能利用率最高的机台
         return suitableMachines.minByOrNull { machine ->
-            machineAvailability[machine.id] ?: LocalDate.MAX
+            val availabilityDate = machineAvailability[machine.id] ?: LocalDate.MAX
+            val capacityUtilization = machine.capacity.toDouble() / 100.0 // 假设100为满产能
+            // 综合考虑可用时间和产能利用率
+            ChronoUnit.DAYS.between(LocalDate.now(), availabilityDate).toInt() + (1.0 / capacityUtilization).toInt()
         }
     }
     
     /**
      * 检查机台是否适合订单
+     * 基于机台配置表，检查机台是否能处理该订单的管规格
      */
     private fun isMachineSuitableForOrder(order: ProductionOrder, machine: Machine): Boolean {
-        // 这里应该根据机台配置规则来判断
-        // 暂时返回true，实际应该根据管规格匹配
-        return true
+        // 使用机台分配引擎检查机台是否适合
+        val machineAssignmentEngine = MachineAssignmentEngine()
+        val machineRules = machineAssignmentEngine.createDefaultMachineRules()
+        val assignment = machineAssignmentEngine.assignMachine(order, machineRules)
+        
+        // 如果机台分配引擎能找到合适的机台，且机台ID匹配，则适合
+        return assignment?.machineId == machine.id
     }
     
     /**
      * 根据管子情况调整排产数量
-     * 管子够进行优先排产。管子不够（0或负数）则进行后排产，排产数为：未发货数-注塑完成
+     * 排产数量 = 未发货数量 - 注塑完成
+     * 确保所有非排除订单都参与排产，最大化生产
      */
     private fun adjustQuantityByPipeStatus(order: ProductionOrder): Int {
-        val pipeQuantity = order.pipeQuantity
         val unshippedQuantity = order.unshippedQuantity
         val injectionCompleted = order.injectionCompleted ?: 0
         
-        return when {
-            // 管子数量足够，按原数量排产
-            pipeQuantity > 0 && pipeQuantity >= unshippedQuantity -> unshippedQuantity
-            
-            // 管子不够，按未发货数-注塑完成排产
-            pipeQuantity <= 0 -> maxOf(0, unshippedQuantity - injectionCompleted)
-            
-            // 管子数量不足但大于0，按管子数量排产
-            else -> minOf(pipeQuantity, unshippedQuantity)
+        // 排产数量 = 未发货数量 - 注塑完成
+        val productionQuantity = maxOf(0, unshippedQuantity - injectionCompleted)
+        
+        // 确保至少排产1个（如果有未发货数量）
+        return if (unshippedQuantity > 0 && productionQuantity == 0) {
+            1 // 至少排产1个
+        } else {
+            productionQuantity
         }
     }
     
     /**
      * 获取换模/换管时间
      * 换模时间为12h，换管时间为4h，都是连续时间
+     * 机台可连续生产，换模/换管时间不影响连续生产能力
      */
     private fun getChangeoverTime(order: ProductionOrder, machine: Machine): Int {
         // 根据机台配置规则获取换模/换管时间
         // 换模时间12小时，换管时间4小时
-        // 考虑连续时间，如果从23点开始换管，则到次日3点结束
-        return 1 // 1天换模时间
+        // 机台可连续生产，换模/换管时间按实际小时计算
+        // 例如：晚上23点开始换管则次日3点完成，16小时可以跨天完成
+        return 16 // 16小时换模/换管时间（12小时换模 + 4小时换管）
     }
     
     /**
@@ -276,6 +317,12 @@ class SmartScheduler {
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)
                 scheduledOrders.add(scheduledOrder)
+                
+                // 机台可连续生产，更新机台可用时间时考虑换模/换管时间
+                val changeoverTime = getChangeoverTime(order, bestMachine)
+                // 16小时换模/换管时间，按小时计算后转换为天数
+                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 连续生产模式下，机台在完成一个订单后经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
             }
@@ -361,6 +408,12 @@ class SmartScheduler {
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)
                 scheduledOrders.add(scheduledOrder)
+                
+                // 机台可连续生产，完成订单后可以立即开始下一个订单（考虑换模时间）
+                val changeoverTime = getChangeoverTime(order, bestMachine)
+                // 16小时换模/换管时间，按小时计算后转换为天数
+                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
             }
@@ -429,6 +482,12 @@ class SmartScheduler {
                 
                 machineSchedule[bestMachine.id]!!.add(scheduledOrder)
                 scheduledOrders.add(scheduledOrder)
+                
+                // 机台可连续生产，完成订单后可以立即开始下一个订单（考虑换模时间）
+                val changeoverTime = getChangeoverTime(order, bestMachine)
+                // 16小时换模/换管时间，按小时计算后转换为天数
+                val changeoverDays = (changeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
+                // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {
                 conflicts.add("订单 ${order.id} 无法安排到合适的机台")
             }
@@ -511,6 +570,7 @@ class SmartScheduler {
     
     /**
      * 计算机台利用率
+     * 以机台配置表为核心，最大化产能利用率
      */
     private fun calculateUtilizationRate(machineSchedule: Map<String, List<ProductionOrder>>, 
                                        machines: List<Machine>): Double {
@@ -518,7 +578,17 @@ class SmartScheduler {
         
         val totalCapacity = machines.sumOf { it.capacity }
         val totalUsed = machineSchedule.values.sumOf { orders ->
-            orders.sumOf { it.calculateProductionDays() * it.dailyProduction }
+            orders.sumOf { order ->
+                // 计算实际生产量：排产数量 × 段数 × 日产量
+                val productionQuantity = adjustQuantityByPipeStatus(order)
+                val totalSegments = productionQuantity * order.segments
+                val productionDays = if (order.dailyProduction > 0) {
+                    totalSegments.toDouble() / order.dailyProduction
+                } else {
+                    order.productionDays
+                }
+                productionDays * order.dailyProduction
+            }
         }
         
         return if (totalCapacity > 0) totalUsed.toDouble() / totalCapacity else 0.0

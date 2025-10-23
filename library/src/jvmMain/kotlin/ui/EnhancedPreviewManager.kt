@@ -99,8 +99,30 @@ class EnhancedPreviewManager {
     /**
      * 更新筛选结果预览
      */
-    fun updateFilteredDataPreview(table: JTable, orders: List<ProductionOrder>) {
-        if (orders.isEmpty()) {
+    fun updateFilteredDataPreview(table: JTable, orders: List<ProductionOrder>, excludedOrders: List<ProductionOrder> = emptyList()) {
+        // 如果没有显式传入排除订单，根据排除条件识别排除的订单
+        val actualExcludedOrders = if (excludedOrders.isEmpty()) {
+            orders.filter { order ->
+                // 不参与排产的条件：
+                // 1. 备注包含"已完成"或"改制"
+                // 2. 外径为0
+                // 3. 注射完成 > 未发货数
+                val notes = order.notes ?: ""
+                val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
+                val hasZeroOuterDiameter = order.outerDiameter <= 0
+                val injectionCompleted = order.injectionCompleted ?: 0
+                val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
+                
+                hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
+            }
+        } else {
+            excludedOrders
+        }
+        
+        // 合并参与排产和不参与排产的订单
+        val allOrders = orders
+        
+        if (allOrders.isEmpty()) {
             table.model = javax.swing.table.DefaultTableModel()
             return
         }
@@ -108,15 +130,17 @@ class EnhancedPreviewManager {
         val headers = listOf(
             "序号", "公司型号", "客户名称", "计划发货时间", "计划发货数量", 
             "数量（支）", "交付期", "内径", "外径", "管子数量", "管子到货", "日产量", "生产天数", 
-            "剩余天数", "已发货数", "未发数量", "机台", "管子情况", 
-            "优先级", "状态", "备注"
+            "剩余天数", "已发货数", "未发数量", "注射完成", "机台", "管子情况", 
+            "优先级", "状态", "备注", "排产状态"
         )
         
         val model = object : javax.swing.table.DefaultTableModel() {
             override fun getColumnCount(): Int = headers.size
-            override fun getRowCount(): Int = orders.size
+            override fun getRowCount(): Int = allOrders.size
             override fun getValueAt(row: Int, col: Int): Any {
-                val order = orders[row]
+                val order = allOrders[row]
+                val isExcluded = actualExcludedOrders.contains(order)
+                
                 return when (col) {
                     0 -> order.id
                     1 -> order.companyModel
@@ -134,11 +158,13 @@ class EnhancedPreviewManager {
                     13 -> order.remainingDays.toString()
                     14 -> order.shippedQuantity.toString()
                     15 -> order.unshippedQuantity.toString()
-                    16 -> order.machine
-                    17 -> order.pipeStatus
-                    18 -> order.priority.name
-                    19 -> order.status.name
-                    20 -> order.notes
+                    16 -> order.injectionCompleted?.toString() ?: "0"
+                    17 -> order.machine
+                    18 -> order.pipeStatus
+                    19 -> order.priority.name
+                    20 -> order.status.name
+                    21 -> order.notes
+                    22 -> if (isExcluded) "不参与排产（绿色标注）" else "参与排产"
                     else -> ""
                 }
             }
@@ -147,6 +173,32 @@ class EnhancedPreviewManager {
         }
         
         table.model = model
+        
+        // 设置行颜色：不参与排产的订单用绿色背景
+        table.setDefaultRenderer(Object::class.java, object : javax.swing.table.DefaultTableCellRenderer() {
+            override fun getTableCellRendererComponent(
+                table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, 
+                row: Int, column: Int
+            ): Component {
+                val component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
+                
+                val order = allOrders[row]
+                val isExcluded = actualExcludedOrders.contains(order)
+                
+                if (isExcluded) {
+                    // 不参与排产的订单用绿色背景
+                    background = Color(144, 238, 144) // 浅绿色
+                    foreground = Color.BLACK
+                } else {
+                    // 参与排产的订单用默认颜色
+                    background = if (isSelected) table?.selectionBackground else table?.background
+                    foreground = if (isSelected) table?.selectionForeground else table?.foreground
+                }
+                
+                return component
+            }
+        })
+        
         adjustColumnWidths(table)
     }
     
