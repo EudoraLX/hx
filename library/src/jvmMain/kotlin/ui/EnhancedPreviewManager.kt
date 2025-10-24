@@ -100,29 +100,29 @@ class EnhancedPreviewManager {
      * 更新筛选结果预览
      * 保持原表顺序，不进行排序
      */
-    fun updateFilteredDataPreview(table: JTable, orders: List<ProductionOrder>, excludedOrders: List<ProductionOrder> = emptyList()) {
+    fun updateFilteredDataPreview(table: JTable, orders: List<ProductionOrder>, excludedOrders: List<ProductionOrder> = emptyList(), originalTableData: TableData? = null) {
+        // 显示所有原始订单，用绿色标注排除的订单
+        // 保持原表顺序，不进行排序
+        val allOrders = orders
+        
         // 如果没有显式传入排除订单，根据排除条件识别排除的订单
         val actualExcludedOrders = if (excludedOrders.isEmpty()) {
-            orders.filter { order ->
+            allOrders.filter { order ->
                 // 不参与排产的条件：
                 // 1. 备注包含"已完成"或"改制"
                 // 2. 外径为0
-                // 3. 注射完成 > 未发货数
+                // 3. 注射完成 >= 未发货数（无生产需求）
                 val notes = order.notes ?: ""
                 val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
                 val hasZeroOuterDiameter = order.outerDiameter <= 0
                 val injectionCompleted = order.injectionCompleted ?: 0
-                val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
+                val noProductionNeed = injectionCompleted >= order.unshippedQuantity
                 
-                hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
+                hasExcludedNotes || hasZeroOuterDiameter || noProductionNeed
             }
         } else {
             excludedOrders
         }
-        
-        // 保持原表顺序：只显示传入的订单，不合并排除的订单
-        // 排除的订单会在绿色标注中显示
-        val allOrders = orders
         
         if (allOrders.isEmpty()) {
             table.model = javax.swing.table.DefaultTableModel()
@@ -151,8 +151,8 @@ class EnhancedPreviewManager {
                     4 -> order.plannedQuantity.toString()
                     5 -> order.quantity.toString()
                     6 -> order.deliveryPeriod?.toString() ?: ""
-                    7 -> order.innerDiameter.toString()
-                    8 -> order.outerDiameter.toString()
+                    7 -> getOriginalDiameterValue(order, originalTableData, "内径")
+                    8 -> getOriginalDiameterValue(order, originalTableData, "外径")
                     9 -> order.pipeQuantity.toString()
                     10 -> order.pipeArrivalDate?.toString() ?: "已到货"
                     11 -> order.dailyProduction.toString()
@@ -205,6 +205,43 @@ class EnhancedPreviewManager {
     }
     
     /**
+     * 获取原始格式的内径外径值
+     */
+    private fun getOriginalDiameterValue(order: ProductionOrder, originalTableData: TableData?, columnName: String): String {
+        if (originalTableData == null) {
+            // 如果没有原始数据，返回解析后的数值
+            return if (columnName == "内径") order.innerDiameter.toString() else order.outerDiameter.toString()
+        }
+        
+        // 从原始表格数据中查找对应的行
+        val orderRow = originalTableData.rows.find { row ->
+            val rowId = getValueByHeader(row, originalTableData.headers, "序号")
+            rowId == order.id
+        }
+        
+        if (orderRow != null) {
+            // 获取原始格式的值
+            val originalValue = getValueByHeader(orderRow, originalTableData.headers, columnName)
+            if (!originalValue.isNullOrBlank()) {
+                return originalValue
+            }
+        }
+        
+        // 如果找不到原始数据，返回解析后的数值
+        return if (columnName == "内径") order.innerDiameter.toString() else order.outerDiameter.toString()
+    }
+    
+    /**
+     * 根据列名获取值
+     */
+    private fun getValueByHeader(row: List<String>, headers: List<String>, headerName: String): String? {
+        val columnIndex = headers.indexOf(headerName)
+        return if (columnIndex >= 0 && columnIndex < row.size) {
+            row[columnIndex].takeIf { it.isNotBlank() }
+        } else null
+    }
+    
+    /**
      * 更新优先级调整预览
      */
     fun updatePriorityPreview(table: JTable, orders: List<ProductionOrder>, shippingPlanTable: TableData?) {
@@ -253,16 +290,6 @@ class EnhancedPreviewManager {
             (companyModel != null && companyModel == order.companyModel) ||
             (customerModel != null && customerModel == order.customerModel)
         }
-    }
-    
-    /**
-     * 根据列名获取值
-     */
-    private fun getValueByHeader(row: List<String>, headers: List<String>, headerName: String): String? {
-        val columnIndex = headers.indexOf(headerName)
-        return if (columnIndex >= 0 && columnIndex < row.size) {
-            row[columnIndex].takeIf { it.isNotBlank() }
-        } else null
     }
     
     /**

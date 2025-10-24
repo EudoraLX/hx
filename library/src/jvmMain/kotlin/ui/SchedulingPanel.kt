@@ -222,8 +222,28 @@ class SchedulingPanel(
                 filteredOrders
             }
             
+            // 保存所有原始订单，用于显示和绿色标注
             uiManager.productionOrders.clear()
-            uiManager.productionOrders.addAll(ordersToConvert)
+            uiManager.productionOrders.addAll(allOrders)
+            
+            // 保存筛选后的订单和排除的订单，用于预览显示
+            uiManager.filteredOrders.clear()
+            uiManager.filteredOrders.addAll(filteredOrders)
+            
+            // 保存排产流程结果，包含排除的订单信息
+            uiManager.schedulingFlowResult = SchedulingFlowResult(
+                mergedTable = tableToConvert,
+                filteredOrders = filteredOrders,
+                excludedOrders = excludedOrders,
+                schedulingResult = SchedulingResult(
+                    orders = emptyList(),
+                    machineSchedule = emptyMap(),
+                    totalProductionDays = 0,
+                    utilizationRate = 0.0,
+                    onTimeDeliveryRate = 0.0
+                ),
+                schedulingPlanTable = TableData("", emptyList(), emptyList(), emptyList())
+            )
             
             // 立即更新预览显示转换结果
             uiManager.updatePreview()
@@ -241,9 +261,9 @@ class SchedulingPanel(
                 appendLine("排除原因：")
                 appendLine("- 已完成/改制: ${excludedOrders.count { it.notes?.contains("已完成") == true || it.notes?.contains("改制") == true }}")
                 appendLine("- 外径为0: ${excludedOrders.count { it.outerDiameter <= 0 }}")
-                appendLine("- 注射完成>未发货数: ${excludedOrders.count { (it.injectionCompleted ?: 0) > it.unshippedQuantity }}")
+                appendLine("- 注射完成>=未发货数: ${excludedOrders.count { (it.injectionCompleted ?: 0) >= it.unshippedQuantity }}")
                 appendLine()
-                appendLine("已自动显示筛选结果")
+                appendLine("已自动显示筛选结果，排除的订单用绿色标注")
             }
             
             JOptionPane.showMessageDialog(panel, message, "转换完成", JOptionPane.INFORMATION_MESSAGE)

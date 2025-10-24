@@ -91,8 +91,8 @@ class OrderConverter {
         val quantity = getValueByHeader(row, headers, "数量（支）")?.toIntOrNull() ?: 0
         val segments = getValueByHeader(row, headers, "段数")?.toIntOrNull() ?: 1
         val deliveryPeriod = parseDate(getValueByHeader(row, headers, "交付期"))
-        val innerDiameter = getValueByHeader(row, headers, "内径")?.toDoubleOrNull() ?: 0.0
-        val outerDiameter = getValueByHeader(row, headers, "外径")?.toDoubleOrNull() ?: 0.0
+        val innerDiameter = parseDiameterValue(getValueByHeader(row, headers, "内径"))
+        val outerDiameter = parseDiameterValue(getValueByHeader(row, headers, "外径"))
         val dailyProduction = getValueByHeader(row, headers, "日产量")?.toIntOrNull() ?: 0
         val productionDays = getValueByHeader(row, headers, "生产天数")?.toDoubleOrNull() ?: 0.0
         val remainingDays = getValueByHeader(row, headers, "剩余天数")?.toDoubleOrNull() ?: 0.0
@@ -149,6 +149,67 @@ class OrderConverter {
         return if (columnIndex >= 0 && columnIndex < row.size) {
             row[columnIndex].takeIf { it.isNotBlank() }
         } else null
+    }
+    
+    /**
+     * 解析内径外径值，支持多种格式
+     * 支持格式：
+     * 1. 纯数字：102
+     * 2. 分数格式：102/195
+     * 3. 多个规格：102/195 122/215
+     * 4. 范围格式：102-195
+     * 对于复杂格式，返回第一个有效值
+     */
+    private fun parseDiameterValue(value: String?): Double {
+        if (value.isNullOrBlank()) return 0.0
+        
+        val cleanValue = value.trim()
+        
+        // 如果是纯数字，直接返回
+        val directNumber = cleanValue.toDoubleOrNull()
+        if (directNumber != null) return directNumber
+        
+        // 处理多个规格的情况：102/195 122/215
+        if (cleanValue.contains(" ") && cleanValue.contains("/")) {
+            val parts = cleanValue.split(" ")
+            for (part in parts) {
+                val number = parseSingleDiameter(part.trim())
+                if (number > 0) return number
+            }
+        }
+        
+        // 处理单个分数格式：102/195
+        if (cleanValue.contains("/")) {
+            return parseSingleDiameter(cleanValue)
+        }
+        
+        // 处理范围格式：102-195
+        if (cleanValue.contains("-")) {
+            val parts = cleanValue.split("-")
+            if (parts.size == 2) {
+                val firstNumber = parts[0].trim().toDoubleOrNull()
+                if (firstNumber != null && firstNumber > 0) return firstNumber
+            }
+        }
+        
+        // 如果都无法解析，返回0
+        return 0.0
+    }
+    
+    /**
+     * 解析单个内径外径值
+     */
+    private fun parseSingleDiameter(value: String): Double {
+        if (value.contains("/")) {
+            // 处理分数格式：102/195，返回第一个数字（通常是内径）
+            val parts = value.split("/")
+            if (parts.size >= 1) {
+                return parts[0].trim().toDoubleOrNull() ?: 0.0
+            }
+        }
+        
+        // 尝试直接解析为数字
+        return value.toDoubleOrNull() ?: 0.0
     }
     
     /**

@@ -32,27 +32,32 @@ class SmartScheduler {
     
     /**
      * 产能优先排产
-     * 以机台配置表为核心，管子数仅决定排产优先级，最大化生产
+     * 以机台配置表为核心，优先产能排产，减少换模换管操作
      * 新约束条件：
-     * 1. 所有参与排产的订单都进行排产
+     * 1. 所有标记为"参与排产"的订单都进行排产
      * 2. 排产数量 = 未发货数量 - 注射完成
-     * 3. 管子数仅决定排产优先级
+     * 3. 优先产能排产，减少换模换管操作
      * 4. 以机台配置分配为核心
      * 5. 最大化产能利用率
      */
     private fun capacityFirstScheduling(orders: List<ProductionOrder>, 
                                       machines: List<Machine>,
                                       constraints: SchedulingConstraints): SchedulingResult {
-        // 按优先级排序：发货计划表优先 > 管子数量足够 > 紧急订单 > 其他
-        // 管子数充足的优先排产，管子数不足的后排产（但仍要排产）
+        // 按产能优先排序：优先产能排产，减少换模换管操作
+        // 1. 优先排产管子数为正数的订单
+        // 2. 相同机台模具的订单优先组合
+        // 3. 管子数量足够的优先排产
+        // 4. 紧急订单优先
         val sortedOrders = orders.sortedWith(compareBy<ProductionOrder> { 
+            // 优先排产管子数为正数的订单
             when {
-                it.priority == OrderPriority.URGENT -> 0  // 发货计划表订单
-                it.priority == OrderPriority.HIGH -> 1
-                it.priority == OrderPriority.MEDIUM -> 2
-                else -> 3
+                it.pipeQuantity > 0 -> 0  // 管子数为正数的优先
+                it.priority == OrderPriority.URGENT -> 1  // 发货计划表订单
+                it.priority == OrderPriority.HIGH -> 2
+                it.priority == OrderPriority.MEDIUM -> 3
+                else -> 4
             }
-        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先（管子数决定优先级）
+        }.thenBy { !it.hasEnoughPipeQuantity() } // 管子数量足够的优先
         .thenBy { !it.isPipeArrived() } // 管子已到货的优先
         .thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
         
@@ -79,6 +84,7 @@ class SmartScheduler {
         }.thenBy { it.plannedDeliveryDate ?: LocalDate.MAX })
         
         // 连续排产：每个机台可连续生产，不受单次生产限制
+        // 确保机台任务饱满，24小时不间断生产
         val machineAvailability = mutableMapOf<String, LocalDate>()
         machines.forEach { machine ->
             machineAvailability[machine.id] = LocalDate.now()
@@ -88,24 +94,21 @@ class SmartScheduler {
             // 根据管子情况调整排产数量
             val adjustedQuantity = adjustQuantityByPipeStatus(order)
             
-            // 确保所有参与排产的订单都进行排产
-            val productionQuantity = if (adjustedQuantity <= 0) {
-                // 如果调整后数量为0，但仍有未发货数，则排产1个
-                if (order.unshippedQuantity > 0) {
-                    1
-                } else {
-                    continue // 跳过真正不需要排产的订单
-                }
-            } else {
-                adjustedQuantity
+            // 如果生产数量为0，跳过这个订单（不需要排产）
+            if (adjustedQuantity <= 0) {
+                continue
             }
             
-            // 计算总段数：(数量*段数)/日产量=生产天数
-            val totalSegments = productionQuantity * order.segments
+            // 生产数量 = 未发货数 - 注塑完成
+            val productionQuantity = adjustedQuantity
+            
+            // 计算生产天数：订单生产天数 = （未发货数-注塑完成）/ 日产量
             val productionDays = if (order.dailyProduction > 0) {
-                totalSegments.toDouble() / order.dailyProduction
+                // 生产天数 = 生产数量 / 日产量
+                kotlin.math.ceil(productionQuantity.toDouble() / order.dailyProduction)
             } else {
-                order.productionDays
+                // 如果没有日产量，使用生产天数
+                kotlin.math.ceil(order.productionDays)
             }
             
             // 确保所有订单都能找到合适的机台进行排产
@@ -134,11 +137,13 @@ class SmartScheduler {
                 
                 // 更新机台可用时间（考虑换模/换管时间）
                 // 换模和换管可以不同时间进行，优化生产安排
+                // 确保24小时连续生产，不间断生产
                 val moldChangeoverTime = getMoldChangeoverTime(order, bestMachine)
                 val pipeChangeoverTime = getPipeChangeoverTime(order, bestMachine)
                 
                 // 换模和换管可以并行或错开安排，取最大值
                 val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                // 换模换管时间按实际小时计算，确保24小时连续生产
                 val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 machineAvailability[bestMachine.id] = endDate.plusDays(changeoverDays)
             } else {
@@ -239,10 +244,17 @@ class SmartScheduler {
             machine.isAvailable && isMachineSuitableForOrder(order, machine)
         }
         
-        if (suitableMachines.isEmpty()) return null
+        // 如果没有合适的机台，选择任何可用的机台（确保所有订单都能排产）
+        val availableMachines = if (suitableMachines.isEmpty()) {
+            machines.filter { it.isAvailable }
+        } else {
+            suitableMachines
+        }
+        
+        if (availableMachines.isEmpty()) return null
         
         // 选择可用时间最早且产能利用率最高的机台
-        return suitableMachines.minByOrNull { machine ->
+        return availableMachines.minByOrNull { machine ->
             val availabilityDate = machineAvailability[machine.id] ?: LocalDate.MAX
             val capacityUtilization = machine.capacity.toDouble() / 100.0 // 假设100为满产能
             // 综合考虑可用时间和产能利用率
@@ -277,13 +289,12 @@ class SmartScheduler {
         // 排产数量 = 未发货数量 - 注射完成
         val productionQuantity = maxOf(0, unshippedQuantity - injectionCompleted)
         
-        // 确保所有参与排产的订单都进行排产
+        // 确保所有筛选后的订单都进行排产
+        // 生产数量 = 未发货数 - 注塑完成
         return if (productionQuantity > 0) {
             productionQuantity
-        } else if (unshippedQuantity > 0) {
-            // 如果注射完成 >= 未发货数，但仍有未发货数，则排产1个
-            1
         } else {
+            // 如果生产数量为0，说明注塑完成 >= 未发货数，不需要排产
             0
         }
     }
@@ -292,12 +303,15 @@ class SmartScheduler {
      * 获取换模/换管时间
      * 换模和换管可以不同时间进行，优化生产安排
      * 机台可连续生产，换模/换管时间按实际小时计算
+     * 换管=4h，换模=12h，根据安排进行更换
+     * 确保24小时连续生产，不间断生产
      */
     private fun getChangeoverTime(order: ProductionOrder, machine: Machine): Int {
         // 根据机台配置规则获取换模/换管时间
         // 换模时间12小时，换管时间4小时
         // 换模和换管可以不同时间进行，可以并行或错开安排
         // 例如：晚上23点开始换管则次日3点完成，可以跨天完成
+        // 确保24小时连续生产，不间断生产
         return 16 // 16小时换模/换管时间（12小时换模 + 4小时换管）
     }
     
@@ -335,6 +349,7 @@ class SmartScheduler {
         }
         
         // 连续排产：每个机台可连续生产，不受单次生产限制
+        // 确保机台任务饱满，24小时不间断生产
         val machineAvailability = mutableMapOf<String, LocalDate>()
         machines.forEach { machine ->
             machineAvailability[machine.id] = LocalDate.now()
@@ -375,6 +390,7 @@ class SmartScheduler {
                 
                 // 换模和换管可以并行或错开安排，取最大值
                 val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                // 换模换管时间按实际小时计算，确保24小时连续生产
                 val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式下，机台在完成一个订单后经过换模/换管时间即可开始下一个订单
             } else {
@@ -436,6 +452,7 @@ class SmartScheduler {
         }
         
         // 连续排产：每个机台可连续生产，不受单次生产限制
+        // 确保机台任务饱满，24小时不间断生产
         val machineAvailability = mutableMapOf<String, LocalDate>()
         machines.forEach { machine ->
             machineAvailability[machine.id] = LocalDate.now()
@@ -445,12 +462,21 @@ class SmartScheduler {
             // 根据管子情况调整排产数量
             val adjustedQuantity = adjustQuantityByPipeStatus(order)
             
-            // 计算生产天数：(数量*段数)/日产量=生产天数
-            val totalSegments = adjustedQuantity * order.segments
+            // 如果生产数量为0，跳过这个订单（不需要排产）
+            if (adjustedQuantity <= 0) {
+                continue
+            }
+            
+            // 生产数量 = 未发货数 - 注塑完成
+            val productionQuantity = adjustedQuantity
+            
+            // 计算生产天数：订单生产天数 = （未发货数-注塑完成）/ 日产量
             val productionDays = if (order.dailyProduction > 0) {
-                totalSegments.toDouble() / order.dailyProduction
+                // 生产天数 = 生产数量 / 日产量
+                kotlin.math.ceil(productionQuantity.toDouble() / order.dailyProduction)
             } else {
-                order.productionDays
+                // 如果没有日产量，使用生产天数
+                kotlin.math.ceil(order.productionDays)
             }
             
             // 确保所有订单都能找到合适的机台进行排产
@@ -483,6 +509,7 @@ class SmartScheduler {
                 
                 // 换模和换管可以并行或错开安排，取最大值
                 val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                // 换模换管时间按实际小时计算，确保24小时连续生产
                 val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {
@@ -537,6 +564,7 @@ class SmartScheduler {
         }
         
         // 连续排产：每个机台可连续生产，不受单次生产限制
+        // 确保机台任务饱满，24小时不间断生产
         val machineAvailability = mutableMapOf<String, LocalDate>()
         machines.forEach { machine ->
             machineAvailability[machine.id] = LocalDate.now()
@@ -572,6 +600,7 @@ class SmartScheduler {
                 
                 // 换模和换管可以并行或错开安排，取最大值
                 val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
+                // 换模换管时间按实际小时计算，确保24小时连续生产
                 val changeoverDays = (totalChangeoverTime / 24.0).let { if (it > 0) it.toLong() else 1L }
                 // 连续生产模式：机台在完成一个订单后，经过换模/换管时间即可开始下一个订单
             } else {

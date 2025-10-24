@@ -195,33 +195,20 @@ class SchedulingFlowManager {
     }
     
     /**
-     * 步骤2：筛选需要排产的订单
-     * 新约束条件：
-     * 1. 已完成的不需要排产
-     * 2. 管子数仅决定排产优先级
-     * 3. 备注包含"已完成"或"改制"的不参与排产（绿色标注）
-     * 4. 注射完成大于未发货数的不参与排产（绿色标注）
-     * 5. 外径为0的不参与排产（绿色标注）
-     * 6. 机台可连续生产，不受单次生产限制
-     * 7. 保持原表顺序，不进行排序
+     * 步骤2：统一筛选逻辑
+     * 将所有订单分为两类：参与排产和不参与排产
+     * 不参与排产的条件：
+     * 1. 备注包含"已完成"或"改制"
+     * 2. 外径为0
+     * 3. 注射完成 >= 未发货数（无生产需求）
      */
     fun filterOrdersForScheduling(mergedTable: TableData): List<ProductionOrder> {
         val allOrders = orderConverter.convertToProductionOrders(mergedTable)
         
         // 保持原表顺序，只筛选不排序
         return allOrders.filter { order ->
-            // 基本筛选条件：只排除真正不需要排产的订单
-            // 1. 未完成订单（计划发货数量 != 已发货数量）
-            // 2. 管子情况不是"已完成"
-            // 3. 未发数量 > 0
-            // 4. 外径不为0（技术约束）
-            val isNotCompleted = order.plannedQuantity != order.shippedQuantity
-            val pipeNotCompleted = order.pipeStatus != "已完成"
-            val hasUnshippedQuantity = order.unshippedQuantity > 0
-            val hasValidOuterDiameter = order.outerDiameter > 0
-            
-            // 只排除真正不需要排产的订单
-            isNotCompleted && pipeNotCompleted && hasUnshippedQuantity && hasValidOuterDiameter
+            // 参与排产的条件：不满足任何排除条件
+            !isOrderExcluded(order)
         }
     }
     
@@ -232,20 +219,28 @@ class SchedulingFlowManager {
         val allOrders = orderConverter.convertToProductionOrders(mergedTable)
         
         return allOrders.filter { order ->
-            // 不参与排产的条件：
-            // 1. 备注包含"已完成"或"改制"
-            // 2. 外径为0
-            // 3. 注射完成 > 未发货数
-            val notes = order.notes ?: ""
-            val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
-            
-            val hasZeroOuterDiameter = order.outerDiameter <= 0
-            
-            val injectionCompleted = order.injectionCompleted ?: 0
-            val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
-            
-            hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
+            // 不参与排产的条件
+            isOrderExcluded(order)
         }
+    }
+    
+    /**
+     * 判断订单是否应该被排除（不参与排产）
+     */
+    private fun isOrderExcluded(order: ProductionOrder): Boolean {
+        // 不参与排产的条件：
+        // 1. 备注包含"已完成"或"改制"
+        val notes = order.notes ?: ""
+        val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
+        
+        // 2. 外径为0
+        val hasZeroOuterDiameter = order.outerDiameter <= 0
+        
+        // 3. 注射完成 >= 未发货数（无生产需求）
+        val injectionCompleted = order.injectionCompleted ?: 0
+        val noProductionNeed = injectionCompleted >= order.unshippedQuantity
+        
+        return hasExcludedNotes || hasZeroOuterDiameter || noProductionNeed
     }
     
     /**

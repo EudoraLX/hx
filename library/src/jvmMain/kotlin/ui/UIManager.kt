@@ -336,22 +336,25 @@ class UIManager {
             }
         }
         
-        // 显示筛选后的订单，如果没有筛选结果则显示所有已转换的订单
-        // 保持原表顺序，不进行排序
-        val ordersToShow = if (filteredOrders.isNotEmpty()) {
+        // 显示所有原始订单，保持原表顺序，不进行排序
+        // 这样可以看到完整的原表数据，排除的订单会用绿色标注
+        val ordersToShow = if (productionOrders.isNotEmpty()) {
+            // 显示所有原始订单，包括参与排产和不参与排产的
+            productionOrders
+        } else if (filteredOrders.isNotEmpty()) {
+            // 如果没有原始订单，显示筛选后的订单
             filteredOrders
         } else if (orderRemovalResult != null) {
             val converter = OrderConverter()
             converter.convertToProductionOrders(orderRemovalResult!!.filteredTable)
-        } else if (productionOrders.isNotEmpty()) {
-            // 如果没有筛选结果，显示所有已转换的订单
-            productionOrders
         } else {
             emptyList()
         }
         
-        // 传递筛选后的订单和排除的订单，保持原表顺序
-        enhancedPreviewManager.updateFilteredDataPreview(table, ordersToShow, excludedOrders)
+        // 传递所有订单和排除的订单，保持原表顺序
+        // 排除的订单会用绿色背景显示
+        val currentTable = getCurrentTable()
+        enhancedPreviewManager.updateFilteredDataPreview(table, ordersToShow, excludedOrders, currentTable)
     }
     
     /**
