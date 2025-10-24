@@ -372,67 +372,147 @@ class SchedulingFlowManager {
      * 步骤5：生成排产计划表
      */
     private fun generateSchedulingPlanTable(mergedTable: TableData, schedulingResult: SchedulingResult): TableData {
-        // 创建新的表头，添加排产相关字段
-        val newHeaders = mergedTable.headers.toMutableList().apply {
-            add("计划开始时间")
-            add("计划完成时间")
-            add("排产机台")
-            add("总段数")
-            add("排产状态")
-            add("排产备注")
+        // 创建新的表头：订单、机台、排产状态、日期列
+        val newHeaders = mutableListOf<String>()
+        newHeaders.add("订单号")
+        newHeaders.add("分配机台")
+        newHeaders.add("排产状态")
+        
+        // 计算日期范围
+        val allDates = schedulingResult.orders.flatMap { order ->
+            listOfNotNull(order.startDate, order.endDate)
+        }
+        
+        if (allDates.isNotEmpty()) {
+            val startDate = allDates.minOrNull()!!
+            val endDate = allDates.maxOrNull()!!
+            
+            // 添加日期列
+            var currentDate = startDate
+            while (!currentDate.isAfter(endDate)) {
+                newHeaders.add(currentDate.format(DateTimeFormatter.ofPattern("MM月dd日")))
+                currentDate = currentDate.plusDays(1)
+            }
+        } else {
+            // 如果没有订单，使用当前日期作为默认范围
+            val startDate = LocalDate.now()
+            val endDate = startDate.plusDays(7)
+            var currentDate = startDate
+            while (!currentDate.isAfter(endDate)) {
+                newHeaders.add(currentDate.format(DateTimeFormatter.ofPattern("MM月dd日")))
+                currentDate = currentDate.plusDays(1)
+            }
         }
         
         val planRows = mutableListOf<List<String>>()
         val planFormulas = mutableListOf<List<String?>>()
         
-        // 创建排产结果映射
-        val schedulingMap = schedulingResult.orders.associateBy { it.id }
+        // 确保显示所有1-7号机台，即使没有订单也要显示
+        val allMachineIds = (1..7).map { "${it}#" }
+        val machineGroups = allMachineIds.map { machineId ->
+            val orders = schedulingResult.machineSchedule[machineId]?.sortedBy { it.startDate } ?: emptyList()
+            machineId to orders
+        }
         
-        // 处理原表的每一行
-        mergedTable.rows.forEachIndexed { rowIndex, row ->
-            val orderId = getValueByHeader(row, mergedTable.headers, "序号")
-            val scheduledOrder = schedulingMap[orderId]
-            
-            val planRow = row.toMutableList()
-            val planRowFormulas = mutableListOf<String?>()
-            
-            // 复制原表的公式
-            repeat(mergedTable.columnCount) { colIndex ->
-                planRowFormulas.add(mergedTable.getFormula(rowIndex, colIndex))
+        // 调试信息：打印排产结果
+        println("🔍 排产结果调试信息:")
+        println("  总订单数: ${schedulingResult.orders.size}")
+        println("  机台排产计划: ${schedulingResult.machineSchedule.keys}")
+        schedulingResult.machineSchedule.forEach { (machineId, orders) ->
+            println("  机台 $machineId: ${orders.size} 个订单")
+            orders.forEach { order ->
+                println("    订单 ${order.id}: 开始=${order.startDate}, 结束=${order.endDate}, 数量=${order.quantity}, 换模=${order.moldChangeoverTime}h, 换管=${order.pipeChangeoverTime}h")
             }
-            
-            if (scheduledOrder != null) {
-                // 更新机台字段
-                val machineIndex = mergedTable.headers.indexOf("机台")
-                if (machineIndex >= 0 && machineIndex < planRow.size) {
-                    planRow[machineIndex] = scheduledOrder.machine
+        }
+        
+        // 使用SmartScheduler的排产结果直接生成排产计划表
+        println("📋 使用SmartScheduler排产结果生成排产计划表...")
+        
+        // 为每个机台创建排产计划
+        machineGroups.forEach { (machineId, orders) ->
+            if (orders.isNotEmpty()) {
+                // 为每个机台的每个订单创建一行
+                orders.forEach { order ->
+                    val planRow = mutableListOf<String>()
+                    val planRowFormulas = mutableListOf<String?>()
+                    
+                    // 订单号
+                    planRow.add(order.id)
+                    planRowFormulas.add(null)
+                    
+                    // 机台
+                    planRow.add(machineId)
+                    planRowFormulas.add(null)
+                    
+                    // 排产状态
+                    planRow.add("已排产")
+                    planRowFormulas.add(null)
+                    
+                    // 计算日期范围
+                    val startDate = order.startDate ?: return@forEach
+                    val endDate = order.endDate ?: return@forEach
+                    
+                    // 为每个日期添加数据
+                    val tableStartDate = allDates.minOrNull() ?: LocalDate.now()
+                    val tableEndDate = allDates.maxOrNull() ?: LocalDate.now().plusDays(7)
+                    
+                    var currentDate = tableStartDate
+                    while (!currentDate.isAfter(tableEndDate)) {
+                        if (!currentDate.isBefore(startDate) && !currentDate.isAfter(endDate)) {
+                            // 在订单日期范围内
+                            if (currentDate.isEqual(startDate)) {
+                                // 第一天：显示换模换管时间和生产时间
+                                val totalChangeoverTime = order.moldChangeoverTime + order.pipeChangeoverTime
+                                if (totalChangeoverTime > 0) {
+                                    // 显示换模换管时间和生产数量
+                                    planRow.add("${order.quantity} 换模(${order.moldChangeoverTime}h) 换管(${order.pipeChangeoverTime}h)")
+                                } else {
+                                    // 无需换模换管，直接生产
+                                    planRow.add("${order.quantity}")
+                                }
+                            } else {
+                                // 连续生产天：显示生产数量
+                                planRow.add("${order.quantity}")
+                            }
+                        } else {
+                            // 不在订单日期范围内
+                            planRow.add("-")
+                        }
+                        planRowFormulas.add(null)
+                        currentDate = currentDate.plusDays(1)
+                    }
+                    
+                    planRows.add(planRow)
+                    planFormulas.add(planRowFormulas)
+                }
+            } else {
+                // 机台没有订单，显示空行
+                val planRow = mutableListOf<String>()
+                val planRowFormulas = mutableListOf<String?>()
+                
+                planRow.add("-") // 订单号为空
+                planRowFormulas.add(null)
+                
+                planRow.add(machineId) // 机台号
+                planRowFormulas.add(null)
+                
+                planRow.add("无排产") // 排产状态
+                planRowFormulas.add(null)
+                
+                // 为所有日期添加"-"
+                val tableStartDate = allDates.minOrNull() ?: LocalDate.now()
+                val tableEndDate = allDates.maxOrNull() ?: LocalDate.now().plusDays(7)
+                
+                var currentDate = tableStartDate
+                while (!currentDate.isAfter(tableEndDate)) {
+                    planRow.add("-")
+                    planRowFormulas.add(null)
+                    currentDate = currentDate.plusDays(1)
                 }
                 
-                // 添加排产相关字段
-                planRow.add(scheduledOrder.startDate?.toString() ?: "")
-                planRow.add(scheduledOrder.endDate?.toString() ?: "")
-                planRow.add(scheduledOrder.machine)
-                planRow.add((scheduledOrder.quantity * scheduledOrder.segments).toString())
-                planRow.add(scheduledOrder.schedulingStatus.name)
-                planRow.add("排产完成")
-                
-                // 为新增字段添加空公式
-                repeat(6) { planRowFormulas.add(null) }
-            } else {
-                // 没有排产的订单，添加空字段
-                planRow.add("")
-                planRow.add("")
-                planRow.add("")
-                planRow.add("")
-                planRow.add("NOT_SCHEDULED")
-                planRow.add("未排产")
-                
-                // 为新增字段添加空公式
-                repeat(6) { planRowFormulas.add(null) }
+                planRows.add(planRow)
+                planFormulas.add(planRowFormulas)
             }
-            
-            planRows.add(planRow)
-            planFormulas.add(planRowFormulas)
         }
         
         return TableData(

@@ -292,7 +292,7 @@ class UIManager {
         updateMachineConfigTab()
         updateSchedulingResultTab()
         updateSchedulingPlanTab()
-        updateGanttChartTab()
+        // 移除甘特图更新，简化界面
     }
     
     /**
@@ -1018,29 +1018,14 @@ class UIManager {
         infoLabel.horizontalAlignment = SwingConstants.CENTER
         panel.add(infoLabel, BorderLayout.NORTH)
         
-        // 甘特图组件
-        val ganttChart = GanttChartPanel()
-        val scrollPane = JScrollPane(ganttChart)
-        scrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-        scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        
-        panel.add(scrollPane, BorderLayout.CENTER)
+        // 移除甘特图，简化界面
+        val label = JLabel("排产计划表已优化，请查看'排产计划表'标签页获取详细安排")
+        label.horizontalAlignment = SwingConstants.CENTER
+        label.font = Font("微软雅黑", Font.PLAIN, 14)
+        panel.add(label, BorderLayout.CENTER)
         
         return panel
     }
     
-    /**
-     * 更新甘特图标签页
-     */
-    private fun updateGanttChartTab() {
-        val previewTabbedPane = this.previewTabbedPane ?: return
-        val ganttChartPanel = previewTabbedPane.getComponentAt(5) as? JPanel ?: return // 甘特图是第6个标签页
-        val scrollPane = ganttChartPanel.getComponent(1) as? JScrollPane ?: return
-        val ganttChart = scrollPane.viewport.view as? GanttChartPanel ?: return
-        
-        // 更新甘特图数据
-        if (schedulingResult != null) {
-            ganttChart.updateSchedulingResult(schedulingResult!!)
-        }
-    }
+    // 移除甘特图更新方法，简化界面
 }

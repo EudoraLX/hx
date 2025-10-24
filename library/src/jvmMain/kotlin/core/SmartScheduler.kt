@@ -98,11 +98,15 @@ class SmartScheduler {
             machineSchedule[machine.id] = mutableListOf()
         }
         
-        // 机台可用时间
+        // 机台可用时间 - 从当天开始智能排产
         val machineAvailability = mutableMapOf<String, LocalDate>()
+        val today = LocalDate.now()
         machines.forEach { machine ->
-            machineAvailability[machine.id] = LocalDate.now()
+            machineAvailability[machine.id] = today
         }
+        
+        println("🚀 智能排产开始 - 从今天开始: $today")
+        println("📋 可用机台: ${machines.map { it.id }.joinToString(", ")}")
         
         // 步骤1：计算所有订单的时间和资源需求
         val orderRequirements = calculateOrderRequirements(orders)
@@ -148,12 +152,13 @@ class SmartScheduler {
             if (finalMachine != null) {
                 val startDate = machineAvailability[finalMachine.id]!!
                 
-                // 计算生产时间：(未发订单数-注塑完成) * (日产量/24) 单位是h
+                // 计算生产时间：真正的跨天连续生产
                 println("订单${order.id} 日产量数据: ${order.dailyProduction}")
+                println("订单${order.id} 排产数量: ${productionQuantity}")
                 val productionTime = if (order.dailyProduction > 0) {
-                    // 生产时间 = 排产数量 * (日产量 / 24)
-                    val time = kotlin.math.ceil(productionQuantity.toDouble() * (order.dailyProduction / 24.0)).toInt()
-                    println("订单${order.id} 生产时间计算: ${productionQuantity} * (${order.dailyProduction} / 24) = ${time}小时")
+                    // 生产时间 = 排产数量 * (24 / 日产量) - 正确的公式
+                    val time = kotlin.math.ceil(productionQuantity.toDouble() * (24.0 / order.dailyProduction)).toInt()
+                    println("订单${order.id} 生产时间计算: ${productionQuantity} * (24 / ${order.dailyProduction}) = ${time}小时")
                     time
                 } else {
                     println("⚠️ 订单${order.id} 日产量为0，使用默认估算")
@@ -165,9 +170,18 @@ class SmartScheduler {
                     }
                 }
                 
-                // 计算生产天数，考虑24小时限制
-                val productionDays = kotlin.math.ceil(productionTime / 24.0).toInt()
+                // 真正的跨天连续生产：不限制24小时，按实际生产时间计算
+                val productionDays = if (productionTime <= 24) {
+                    1 // 一天内完成
+                } else {
+                    // 超过24小时，允许跨天连续生产
+                    kotlin.math.ceil(productionTime / 24.0).toInt()
+                }
                 val endDate = startDate.plusDays(productionDays.toLong() - 1)
+                
+                // 使用已经计算好的智能换模换管时间
+                val moldChangeoverTime = requirement.moldChangeover
+                val pipeChangeoverTime = requirement.pipeChangeover
                 
                 println("✅ 订单 ${order.id} 排产成功")
                 println("机台: ${finalMachine.id}, 开始: $startDate, 结束: $endDate")
@@ -181,26 +195,30 @@ class SmartScheduler {
                     machine = finalMachine.id,
                     productionDays = productionDays.toDouble(),
                     remainingDays = productionDays.toDouble(),
-                    quantity = productionQuantity
+                    quantity = productionQuantity,
+                    moldChangeoverTime = moldChangeoverTime,
+                    pipeChangeoverTime = pipeChangeoverTime
                 )
                 
                 machineSchedule[finalMachine.id]!!.add(scheduledOrder)
                 scheduledOrders.add(scheduledOrder)
                 scheduledCount++
                 
-                // 使用已经计算好的智能换模换管时间
-                val moldChangeoverTime = requirement.moldChangeover
-                val pipeChangeoverTime = requirement.pipeChangeover
-                
                 println("换模时间: ${moldChangeoverTime}小时, 换管时间: ${pipeChangeoverTime}小时")
                 
                 // 换模和换管可以并行或错开安排，取最大值
                 val totalChangeoverTime = maxOf(moldChangeoverTime, pipeChangeoverTime)
-                val changeoverDays = (totalChangeoverTime / 24.0).let { 
-                    if (it > 0) kotlin.math.ceil(it).toLong() else 1L 
+                
+                // 按照实际小时数安排换模换管时间
+                val changeoverDays = if (totalChangeoverTime > 0) {
+                    // 计算需要多少天来完成换模换管
+                    kotlin.math.ceil(totalChangeoverTime / 24.0).toLong()
+                } else {
+                    0L // 无需换模换管
                 }
                 
                 // 更新机台可用时间，考虑智能换模换管时间
+                // 机台在订单完成后，还需要换模换管时间才能开始下一个订单
                 machineAvailability[finalMachine.id] = endDate.plusDays(changeoverDays)
                 
                 println("总换模换管时间: ${totalChangeoverTime}小时 (${changeoverDays}天)")
@@ -447,12 +465,12 @@ class SmartScheduler {
             val productionQuantity = adjustQuantityByPipeStatus(order)
             if (productionQuantity <= 0) return@forEach
             
-            // 计算生产时间：(未发订单数-注塑完成) * (日产量/24) 单位是h
+            // 计算生产时间：(未发订单数-注塑完成) * (24/日产量) 单位是h
             println("订单${order.id} 日产量数据: ${order.dailyProduction}")
             val productionTime = if (order.dailyProduction > 0) {
-                // 生产时间 = 排产数量 * (日产量 / 24)
-                val time = kotlin.math.ceil(productionQuantity.toDouble() * (order.dailyProduction / 24.0)).toInt()
-                println("订单${order.id} 生产时间计算: ${productionQuantity} * (${order.dailyProduction} / 24) = ${time}小时")
+                // 生产时间 = 排产数量 * (24 / 日产量) - 修复公式
+                val time = kotlin.math.ceil(productionQuantity.toDouble() * (24.0 / order.dailyProduction)).toInt()
+                println("订单${order.id} 生产时间计算: ${productionQuantity} * (24 / ${order.dailyProduction}) = ${time}小时")
                 time
             } else {
                 println("⚠️ 订单${order.id} 日产量为0，使用默认估算")
@@ -489,7 +507,7 @@ class SmartScheduler {
      */
     private fun createOptimalSchedulingPlan(
         orderRequirements: Map<ProductionOrder, OrderRequirement>,
-                                    machines: List<Machine>,
+                                   machines: List<Machine>,
         machineAvailability: MutableMap<String, LocalDate>
     ): Map<ProductionOrder, OrderRequirement> {
         
@@ -509,32 +527,17 @@ class SmartScheduler {
             machinePipeState[machine.id] = null // 初始状态：无管子
         }
         
-        // 按优先级、模具管子匹配度、总时间排序订单
-        // 优先安排相同模具管子的订单，减少换模换管时间
+        // 按优先级排序订单，确保所有机台同时开始工作
         val sortedOrders = orderRequirements.entries.sortedWith(compareBy<Map.Entry<ProductionOrder, OrderRequirement>> { 
             it.key.priority.ordinal 
-        }.thenBy { entry ->
-            // 计算模具管子匹配度：相同模具管子优先
-            val order = entry.key
-            val orderMold = getOrderMoldId(order)
-            val orderPipe = getOrderPipeId(order)
-            
-            // 检查是否有相同模具管子的订单已经在排产
-            val hasSameMoldPipe = machineMoldState.values.contains(orderMold) && 
-                                 machinePipeState.values.contains(orderPipe)
-            
-            // 匹配度：0=完全匹配，1=部分匹配，2=不匹配
-            when {
-                hasSameMoldPipe -> 0  // 最高优先级
-                machineMoldState.values.contains(orderMold) -> 1  // 相同模具
-                else -> 2  // 需要换模换管
-            }
         }.thenBy { 
             it.value.totalTime 
         })
         
+        println("📋 订单排序完成，开始多机台同时排产...")
+        
         for ((order, requirement) in sortedOrders) {
-            // 智能选择最佳机台：优先选择相同模具管子的机台
+            // 轮询分配机台，确保所有机台同时工作
             val bestMachine = findBestMachineForOrderWithMoldPipeOptimization(
                 order, machines, machineWorkload, machineMoldState, machinePipeState
             )
@@ -566,7 +569,8 @@ class SmartScheduler {
                 
                 // 更新机台工作负载和可用时间
                 machineWorkload[bestMachine.id] = machineWorkload[bestMachine.id]!! + totalTime
-                machineAvailability[bestMachine.id] = endDate.plusDays(1) // 下个订单从结束时间的下一天开始
+                // 机台在订单完成后立即可以开始下一个订单（同一天）
+                machineAvailability[bestMachine.id] = endDate.plusDays(1)
                 
                 // 更新机台状态：记录新的模具和管子
                 updateMachineState(order, bestMachine, machineMoldState, machinePipeState)
@@ -676,7 +680,7 @@ class SmartScheduler {
      */
     private fun findBestMachineForOrderWithMoldPipeOptimization(
         order: ProductionOrder,
-        machines: List<Machine>,
+                                  machines: List<Machine>,
         machineWorkload: Map<String, Int>,
         machineMoldState: Map<String, String?>,
         machinePipeState: Map<String, String?>
@@ -718,7 +722,29 @@ class SmartScheduler {
             }
         }
         
-        // 策略3：使用机台规则匹配
+        // 策略3：轮询分配机台，确保所有机台同时工作
+        val availableMachines = machines.filter { machine ->
+            canMachineHandleOrder(order, machine)
+        }
+        
+        if (availableMachines.isNotEmpty()) {
+            // 按机台号排序，确保轮询分配
+            val sortedMachines = availableMachines.sortedBy { machine ->
+                machine.id.replace("#", "").toIntOrNull() ?: 0
+            }
+            
+            // 选择当前工作负载最轻的机台
+            val selectedMachine = sortedMachines.minByOrNull { machine ->
+                machineWorkload[machine.id] ?: 0
+            }
+            
+            if (selectedMachine != null) {
+                println("  ✅ 轮询分配到机台: ${selectedMachine.id} (工作负载: ${machineWorkload[selectedMachine.id]}小时)")
+                return selectedMachine
+            }
+        }
+        
+        // 策略4：使用机台规则匹配
         return findBestMachineForOrder(order, machines, machineWorkload)
     }
     
@@ -728,7 +754,7 @@ class SmartScheduler {
      */
     private fun findBestMachineForOrder(
         order: ProductionOrder,
-        machines: List<Machine>,
+                                      machines: List<Machine>,
         machineWorkload: Map<String, Int>
     ): Machine? {
         

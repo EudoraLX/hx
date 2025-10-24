@@ -33,6 +33,8 @@ data class ProductionOrder(
     val schedulingStatus: SchedulingStatus = SchedulingStatus.NOT_SCHEDULED, // 排产状态
     val startDate: LocalDate? = null,  // 计划开始日期
     val endDate: LocalDate? = null,    // 计划完成日期
+    val moldChangeoverTime: Int = 0,   // 换模时间（小时）
+    val pipeChangeoverTime: Int = 0,   // 换管时间（小时）
     val notes: String = ""             // 备注
 ) {
     /**
