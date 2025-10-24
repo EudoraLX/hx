@@ -188,9 +188,9 @@ class SmartScheduler {
                 scheduledOrders.add(scheduledOrder)
                 scheduledCount++
                 
-                // 换模换管时间处理：两个操作可以拆开，但需要考虑24小时限制
-                val moldChangeoverTime = getMoldChangeoverTime(order, finalMachine)
-                val pipeChangeoverTime = getPipeChangeoverTime(order, finalMachine)
+                // 使用已经计算好的智能换模换管时间
+                val moldChangeoverTime = requirement.moldChangeover
+                val pipeChangeoverTime = requirement.pipeChangeover
                 
                 println("换模时间: ${moldChangeoverTime}小时, 换管时间: ${pipeChangeoverTime}小时")
                 
@@ -200,7 +200,7 @@ class SmartScheduler {
                     if (it > 0) kotlin.math.ceil(it).toLong() else 1L 
                 }
                 
-                // 更新机台可用时间，考虑换模换管时间
+                // 更新机台可用时间，考虑智能换模换管时间
                 machineAvailability[finalMachine.id] = endDate.plusDays(changeoverDays)
                 
                 println("总换模换管时间: ${totalChangeoverTime}小时 (${changeoverDays}天)")
@@ -509,16 +509,35 @@ class SmartScheduler {
             machinePipeState[machine.id] = null // 初始状态：无管子
         }
         
-        // 按优先级和总时间排序订单
+        // 按优先级、模具管子匹配度、总时间排序订单
+        // 优先安排相同模具管子的订单，减少换模换管时间
         val sortedOrders = orderRequirements.entries.sortedWith(compareBy<Map.Entry<ProductionOrder, OrderRequirement>> { 
             it.key.priority.ordinal 
+        }.thenBy { entry ->
+            // 计算模具管子匹配度：相同模具管子优先
+            val order = entry.key
+            val orderMold = getOrderMoldId(order)
+            val orderPipe = getOrderPipeId(order)
+            
+            // 检查是否有相同模具管子的订单已经在排产
+            val hasSameMoldPipe = machineMoldState.values.contains(orderMold) && 
+                                 machinePipeState.values.contains(orderPipe)
+            
+            // 匹配度：0=完全匹配，1=部分匹配，2=不匹配
+            when {
+                hasSameMoldPipe -> 0  // 最高优先级
+                machineMoldState.values.contains(orderMold) -> 1  // 相同模具
+                else -> 2  // 需要换模换管
+            }
         }.thenBy { 
             it.value.totalTime 
         })
         
         for ((order, requirement) in sortedOrders) {
-            // 找到最适合的机台
-            val bestMachine = findBestMachineForOrder(order, machines, machineWorkload)
+            // 智能选择最佳机台：优先选择相同模具管子的机台
+            val bestMachine = findBestMachineForOrderWithMoldPipeOptimization(
+                order, machines, machineWorkload, machineMoldState, machinePipeState
+            )
             
             if (bestMachine != null) {
                 // 智能换模换管计算
@@ -592,10 +611,13 @@ class SmartScheduler {
             0
         }
         
-        // 计算换管时间：如果管子不同，需要4小时换管
-        val pipeChangeover = if (currentPipe != orderPipe) {
+        // 计算换管时间：只有在不换模的情况下，如果管子不同才需要换管
+        val pipeChangeover = if (moldChangeover == 0 && currentPipe != orderPipe) {
             println("  🔄 机台${machine.id} 需要换管: $currentPipe -> $orderPipe (4小时)")
             4
+        } else if (moldChangeover > 0) {
+            println("  ✅ 机台${machine.id} 换模已包含管子选择，无需单独换管 (0小时)")
+            0
         } else {
             println("  ✅ 机台${machine.id} 管子相同: $currentPipe (0小时)")
             0
@@ -649,12 +671,64 @@ class SmartScheduler {
     }
     
     /**
+     * 智能选择最佳机台，优先选择相同模具管子的机台
+     * 实现产能最大化的最优排产
+     */
+    private fun findBestMachineForOrderWithMoldPipeOptimization(
+        order: ProductionOrder,
+        machines: List<Machine>,
+        machineWorkload: Map<String, Int>,
+        machineMoldState: Map<String, String?>,
+        machinePipeState: Map<String, String?>
+    ): Machine? {
+        
+        println("  🔍 为订单${order.id} 智能选择最佳机台...")
+        
+        val orderMold = getOrderMoldId(order)
+        val orderPipe = getOrderPipeId(order)
+        
+        // 策略1：优先选择相同模具管子的机台（无需换模换管）
+        val sameMoldPipeMachines = machines.filter { machine ->
+            machineMoldState[machine.id] == orderMold && 
+            machinePipeState[machine.id] == orderPipe
+        }
+        
+        if (sameMoldPipeMachines.isNotEmpty()) {
+            val selectedMachine = sameMoldPipeMachines.minByOrNull { machine ->
+                machineWorkload[machine.id] ?: 0
+            }
+            if (selectedMachine != null) {
+                println("  ✅ 找到相同模具管子机台: ${selectedMachine.id} (无需换模换管)")
+                return selectedMachine
+            }
+        }
+        
+        // 策略2：选择相同模具的机台（只需换管）
+        val sameMoldMachines = machines.filter { machine ->
+            machineMoldState[machine.id] == orderMold
+        }
+        
+        if (sameMoldMachines.isNotEmpty()) {
+            val selectedMachine = sameMoldMachines.minByOrNull { machine ->
+                machineWorkload[machine.id] ?: 0
+            }
+            if (selectedMachine != null) {
+                println("  ✅ 找到相同模具机台: ${selectedMachine.id} (只需换管)")
+                return selectedMachine
+            }
+        }
+        
+        // 策略3：使用机台规则匹配
+        return findBestMachineForOrder(order, machines, machineWorkload)
+    }
+    
+    /**
      * 为订单找到最佳机台
      * 基于机台规则匹配，考虑工作负载平衡
      */
     private fun findBestMachineForOrder(
         order: ProductionOrder,
-                                      machines: List<Machine>,
+        machines: List<Machine>,
         machineWorkload: Map<String, Int>
     ): Machine? {
         

@@ -127,8 +127,8 @@ class GanttChartPanel : JPanel() {
                 val endDate = order.endDate ?: return@forEach
                 
                 // 只添加生产任务，不显示换模换管
-                dailySchedule[machineId]?.add(
-                    DailyTask(
+                    dailySchedule[machineId]?.add(
+                        DailyTask(
                         date = startDate,
                         taskType = TaskType.PRODUCTION,
                         orderId = order.id,
