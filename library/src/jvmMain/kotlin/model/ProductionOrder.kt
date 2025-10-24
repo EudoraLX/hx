@@ -30,6 +30,7 @@ data class ProductionOrder(
     val isCompleted: Boolean = false,   // 是否已完成
     val priority: OrderPriority,       // 订单优先级
     val status: OrderStatus,           // 订单状态
+    val schedulingStatus: SchedulingStatus = SchedulingStatus.NOT_SCHEDULED, // 排产状态
     val startDate: LocalDate? = null,  // 计划开始日期
     val endDate: LocalDate? = null,    // 计划完成日期
     val notes: String = ""             // 备注
@@ -94,6 +95,16 @@ enum class OrderStatus {
     IN_PRODUCTION, // 生产中
     COMPLETED,    // 已完成
     CANCELLED     // 已取消
+}
+
+/**
+ * 排产状态枚举
+ */
+enum class SchedulingStatus {
+    NOT_SCHEDULED,    // 未排产
+    SCHEDULED,        // 已排产
+    IN_PRODUCTION,    // 生产中
+    COMPLETED         // 已完成
 }
 
 /**
@@ -175,6 +186,8 @@ data class MachineRule(
     val moldId: String,                // 模具ID
     val pipeSpecs: List<PipeSpecification>,
     val description: String,           // 说明
+    val innerDiameters: List<Double>,  // 内径列表
+    val outerDiameters: List<Double>,  // 外径列表
     val changeoverTime: Int = 4,       // 换模具时间(小时)
     val pipeChangeTime: Int = 12,      // 换接口时间(小时)
     val interchangeableWith: List<String> = emptyList() // 可互换机台

@@ -231,14 +231,12 @@ class OrderConverter {
     
     /**
      * 确定订单状态
+     * 简化逻辑：所有筛选后的订单都是待排产状态
      */
     private fun determineOrderStatus(plannedQuantity: Int, shippedQuantity: Int, unshippedQuantity: Int): OrderStatus {
-        return when {
-            plannedQuantity > 0 && plannedQuantity == shippedQuantity -> OrderStatus.COMPLETED
-            shippedQuantity > 0 -> OrderStatus.IN_PRODUCTION
-            unshippedQuantity > 0 -> OrderStatus.PENDING
-            else -> OrderStatus.PENDING
-        }
+        // 所有筛选后的订单都是待排产状态
+        // 不基于计划发货数和已发货数来判断状态
+        return OrderStatus.PENDING
     }
     
     /**

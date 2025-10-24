@@ -21,7 +21,7 @@ class PipeSpecParser {
         
         if (specString.isBlank()) return specs
         
-        // 移除Ø符号和空格
+        // 移除Ø符号和空格，但保留结构
         val cleanSpec = specString.replace("Ø", "").replace(" ", "")
         
         // 检查是否为大规格
@@ -38,11 +38,13 @@ class PipeSpecParser {
         
         // 解析各种格式
         when {
-            // 范围格式：130/154-204/226
+            // 范围格式：130/154-204/226 或 102/122-195/215
             specWithoutMarks.contains("-") -> {
                 val parts = specWithoutMarks.split("-")
                 if (parts.size == 2) {
+                    // 解析第一部分：102/122 -> 内径102, 外径122
                     val startSpec = parseSingleSpec(parts[0])
+                    // 解析第二部分：195/215 -> 内径195, 外径215
                     val endSpec = parseSingleSpec(parts[1])
                     if (startSpec != null && endSpec != null) {
                         specs.add(PipeSpecification(
@@ -191,13 +193,14 @@ class PipeSpecParser {
      * 1. 外径匹配即可，完全忽略内径
      * 2. 外径相同或相近就匹配成功
      * 3. 内径可以任意，不需要考虑
+     * 4. 扩大匹配范围，确保更多订单能匹配到机台
      */
     fun exactPipeSpecMatch(orderSpec: PipeSpecification, ruleSpec: PipeSpecification): Boolean {
         // 只看外径，外径相同或相近就匹配成功
         val outerDiff = kotlin.math.abs(orderSpec.outerDiameter - ruleSpec.outerDiameter)
         
-        // 外径误差范围：±5mm
-        return outerDiff <= 5.0
+        // 扩大外径误差范围：±20mm，确保更多订单能匹配到机台
+        return outerDiff <= 20.0
     }
     
     /**
@@ -225,5 +228,18 @@ class PipeSpecParser {
         }
         
         return null
+    }
+    
+    /**
+     * 测试管规格解析
+     */
+    fun testPipeSpecParsing() {
+        val testSpec = "Ø 102/Ø 122-Ø 195/Ø 215"
+        println("测试规格: $testSpec")
+        
+        val specs = parsePipeSpecs(testSpec)
+        specs.forEach { spec ->
+            println("解析结果: 内径=${spec.innerDiameter}, 外径=${spec.outerDiameter}")
+        }
     }
 }

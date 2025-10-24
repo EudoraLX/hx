@@ -28,13 +28,18 @@ class SchedulingFlowManager {
         val mergedTable = table
         
         // 步骤2：筛选需要排产的订单
+        println("🔍 开始筛选订单...")
         val filteredOrders = filterOrdersForScheduling(mergedTable)
+        println("🔍 筛选后订单数: ${filteredOrders.size}")
         
         // 步骤2.5：获取不参与排产的订单（用于绿色标注）
         val excludedOrders = getExcludedOrders(mergedTable)
+        println("🔍 排除订单数: ${excludedOrders.size}")
         
         // 步骤3：根据表格中的发货计划信息调整优先级
+        println("🔍 优先级调整前订单数: ${filteredOrders.size}")
         val prioritizedOrders = adjustPriorityFromTable(filteredOrders, mergedTable)
+        println("🔍 优先级调整后订单数: ${prioritizedOrders.size}")
         
         // 步骤4：智能排产（使用指定的策略）
         val schedulingResult = performSchedulingWithStrategy(prioritizedOrders, machineRules, strategy)
@@ -70,7 +75,9 @@ class SchedulingFlowManager {
         val excludedOrders = getExcludedOrders(mergedTable)
         
         // 步骤3：根据发货计划表调整优先级
+        println("🔍 优先级调整前订单数: ${filteredOrders.size}")
         val prioritizedOrders = adjustPriorityByShippingPlan(filteredOrders, shippingPlanTable)
+        println("🔍 优先级调整后订单数: ${prioritizedOrders.size}")
         
         // 步骤4：智能排产
         val schedulingResult = performScheduling(prioritizedOrders, machineRules)
@@ -368,6 +375,7 @@ class SchedulingFlowManager {
             add("计划完成时间")
             add("排产机台")
             add("总段数")
+            add("排产状态")
             add("排产备注")
         }
         
@@ -402,20 +410,22 @@ class SchedulingFlowManager {
                 planRow.add(scheduledOrder.endDate?.toString() ?: "")
                 planRow.add(scheduledOrder.machine)
                 planRow.add((scheduledOrder.quantity * scheduledOrder.segments).toString())
+                planRow.add(scheduledOrder.schedulingStatus.name)
                 planRow.add("排产完成")
                 
                 // 为新增字段添加空公式
-                repeat(5) { planRowFormulas.add(null) }
+                repeat(6) { planRowFormulas.add(null) }
             } else {
                 // 没有排产的订单，添加空字段
                 planRow.add("")
                 planRow.add("")
                 planRow.add("")
                 planRow.add("")
+                planRow.add("NOT_SCHEDULED")
                 planRow.add("未排产")
                 
                 // 为新增字段添加空公式
-                repeat(5) { planRowFormulas.add(null) }
+                repeat(6) { planRowFormulas.add(null) }
             }
             
             planRows.add(planRow)
