@@ -262,6 +262,7 @@ class SchedulingPanel(
                 appendLine("- 已完成/改制: ${excludedOrders.count { it.notes?.contains("已完成") == true || it.notes?.contains("改制") == true }}")
                 appendLine("- 外径为0: ${excludedOrders.count { it.outerDiameter <= 0 }}")
                 appendLine("- 注射完成>=未发货数: ${excludedOrders.count { (it.injectionCompleted ?: 0) >= it.unshippedQuantity }}")
+                appendLine("- 日产量为空: ${excludedOrders.count { it.dailyProduction <= 0 }}")
                 appendLine()
                 appendLine("已自动显示筛选结果，排除的订单用绿色标注")
             }

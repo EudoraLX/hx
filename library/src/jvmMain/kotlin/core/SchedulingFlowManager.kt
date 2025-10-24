@@ -247,7 +247,10 @@ class SchedulingFlowManager {
         val injectionCompleted = order.injectionCompleted ?: 0
         val noProductionNeed = injectionCompleted >= order.unshippedQuantity
         
-        return hasExcludedNotes || hasZeroOuterDiameter || noProductionNeed
+        // 4. 日产量为空（新增条件）
+        val hasNoDailyProduction = order.dailyProduction <= 0
+        
+        return hasExcludedNotes || hasZeroOuterDiameter || noProductionNeed || hasNoDailyProduction
     }
     
     /**

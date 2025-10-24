@@ -57,6 +57,7 @@ class OrderConverter {
         // 1. 备注包含"已完成"或"改制"
         // 2. 外径为0
         // 3. 注塑完成 > 未发货数
+        // 4. 日产量为空（新增条件）
         val notes = order.notes ?: ""
         val hasExcludedNotes = notes.contains("已完成") || notes.contains("改制")
         
@@ -65,7 +66,9 @@ class OrderConverter {
         val injectionCompleted = order.injectionCompleted ?: 0
         val injectionExceedsUnshipped = injectionCompleted > order.unshippedQuantity
         
-        return hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped
+        val hasNoDailyProduction = order.dailyProduction <= 0
+        
+        return hasExcludedNotes || hasZeroOuterDiameter || injectionExceedsUnshipped || hasNoDailyProduction
     }
     
     /**
